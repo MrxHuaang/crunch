@@ -1,4 +1,4 @@
--- Habilidades activas: rastro, sprint, alas y frenesí. Cada una tiene tecla y botón,
+-- Habilidades activas: rastro, sprint, alas, frenesí, pisotón y tirachinas. Cada una tiene tecla y botón,
 -- y el botón solo aparece cuando la tienes.
 
 local Players = game:GetService("Players")
@@ -136,6 +136,26 @@ local function doFrenzy()
 	end
 end
 
+-- Pisotón y tirachinas: los decide el servidor (módulo Allies, remoto "Allies")
+local function askAllies(action: string)
+	local remote = remotes:FindFirstChild("Allies")
+	if remote and remote:IsA("RemoteEvent") then
+		remote:FireServer(action)
+	end
+end
+
+local function doStomp()
+	if State.now() >= State.num("StompReadyAt") then
+		askAllies("Stomp")
+	end
+end
+
+local function doSling()
+	if State.now() >= State.num("SlingReadyAt") and State.num("Carry") > 0 then
+		askAllies("Sling")
+	end
+end
+
 local LIST = {
 	{ id = "trail", key = Enum.KeyCode.F, keyName = "F", label = "Rastro", run = doTrail, ready = function()
 		return 0
@@ -148,6 +168,12 @@ local LIST = {
 	end },
 	{ id = "frenzy", key = Enum.KeyCode.G, keyName = "G", label = "Frenesí", run = doFrenzy, ready = function()
 		return State.num("FrenzyReadyAt") - State.now()
+	end },
+	{ id = "stomp", icon = "area", key = Enum.KeyCode.X, keyName = "X", label = "Pisotón", run = doStomp, ready = function()
+		return State.num("StompReadyAt") - State.now()
+	end },
+	{ id = "sling", icon = "speed", key = Enum.KeyCode.C, keyName = "C", label = "Lanzar", run = doSling, ready = function()
+		return State.num("SlingReadyAt") - State.now()
 	end },
 }
 
@@ -196,7 +222,7 @@ local function build(gui: ScreenGui)
 		Comic.round(face)
 		Comic.ink(face, 3.5, true).LineJoinMode = Enum.LineJoinMode.Round
 
-		local icon = Comic.image(face, Assets.Icons[ability.id])
+		local icon = Comic.image(face, Assets.Icons[ability.icon or ability.id] or Assets.Icons.anthill)
 		icon.AnchorPoint = Vector2.new(0.5, 0.5)
 		icon.Position = UDim2.fromScale(0.5, 0.5)
 		icon.Size = UDim2.fromScale(0.62, 0.62)
