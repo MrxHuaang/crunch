@@ -38,6 +38,7 @@ local FOOD_HALF = HALF - 14 -- donde salen los racimos (FoodService)
 local rng = Random.new()
 local remote: RemoteEvent
 local posRemote: UnreliableRemoteEvent
+local listening = {} :: { [Player]: true } -- clientes que ya conectaron HazardPos (avisan con "Ready")
 local immuneUntil: { [Player]: number } = {}
 local creatures = {}
 
@@ -261,7 +262,10 @@ local function creatureLoop()
 				(creature.happyUntil or 0) > now,
 			})
 		end
-		posRemote:FireAllClients(packet)
+		-- Solo a quien ya escucha: a un cliente que aún carga, Roblox le tira el paquete con un aviso
+		for player in listening do
+			posRemote:FireClient(player, packet)
+		end
 	end
 end
 
@@ -330,8 +334,14 @@ function Hazards.start(remotes: Folder)
 	posRemote = Instance.new("UnreliableRemoteEvent")
 	posRemote.Name = "HazardPos"
 	posRemote.Parent = remotes
+	remote.OnServerEvent:Connect(function(player, kind)
+		if kind == "Ready" and player.Parent then
+			listening[player] = true
+		end
+	end)
 
 	Players.PlayerRemoving:Connect(function(player)
+		listening[player] = nil
 		immuneUntil[player] = nil
 	end)
 

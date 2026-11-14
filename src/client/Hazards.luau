@@ -551,6 +551,7 @@ function Hazards.start(remotes: Folder)
 	folder.Parent = Workspace
 
 	posRemote.OnClientEvent:Connect(onPositions)
+	remote:FireServer("Ready") -- ya escucho: el servidor empieza a mandarme posiciones
 	remote.OnClientEvent:Connect(function(kind: string, a: any, b: any, c: any, d: any)
 		if kind == "Stomp" then
 			onStomp(a)
