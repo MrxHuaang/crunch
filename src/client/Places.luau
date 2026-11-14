@@ -66,6 +66,12 @@ local function depthKnown(): boolean
 	return player:GetAttribute("Depth") ~= nil
 end
 
+-- Hasta qué zona se abren las puertas: tu capa o la de la llave maestra (Monetize, atributo KeyDepth)
+local function gateDepth(): number
+	local key = player:GetAttribute("KeyDepth")
+	return math.max(State.depth(), if type(key) == "number" then key else 0)
+end
+
 local function zoneOf(gate: Instance): number?
 	local zone = gate:GetAttribute("Zone")
 	if type(zone) == "number" then
@@ -152,7 +158,7 @@ local function swingOpen(gate: Model)
 		end
 		animating[gate] = nil
 		if gate.Parent then
-			if State.depth() >= (zoneOf(gate) or math.huge) then
+			if gateDepth() >= (zoneOf(gate) or math.huge) then
 				openGate(gate)
 			else
 				closeGate(gate)
@@ -174,7 +180,7 @@ local function applyGate(gate: Instance, animate: boolean)
 	if not zone or animating[gate] then
 		return
 	end
-	if State.depth() >= zone then
+	if gateDepth() >= zone then
 		if animate then
 			swingOpen(gate)
 		else
@@ -186,7 +192,7 @@ local function applyGate(gate: Instance, animate: boolean)
 end
 
 local function applyAll()
-	local depth = State.depth()
+	local depth = gateDepth()
 	local known = depthKnown()
 	-- Qué zonas acaban de abrirse ahora mismo, durante la partida
 	local justOpened = {}
@@ -269,7 +275,7 @@ local function checkClosedGate(position: Vector3)
 	if os.clock() - lastWarn < WARN_EVERY or math.abs(position.X) > DOOR then
 		return
 	end
-	local depth = State.depth()
+	local depth = gateDepth()
 	for i = 2, #Config.Zones do
 		local zone = Config.Zones[i]
 		if depth < zone.id and math.abs(position.Z - (zone.z0 + 10)) <= GATE_REACH then
