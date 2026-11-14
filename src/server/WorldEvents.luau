@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local FoodModels = require(ReplicatedStorage.Shared.FoodModels)
+local DevTools = require(script.Parent.DevTools)
 local Profiles = require(script.Parent.Profiles)
 
 local WorldEvents = {}
@@ -65,6 +66,7 @@ local current = nil -- lo que se anunció o está en marcha
 local crumbs: { [number]: { pos: Vector3, landAt: number } } = {}
 local greeted: { [Player]: boolean } = {}
 local feast = nil -- banquete en marcha (solo mientras se puede comer)
+local forced: string? = nil -- panel DEV: el próximo evento sale ya y es de este tipo
 
 local function serverNow(): number
 	return Workspace:GetServerTimeNow()
@@ -537,17 +539,21 @@ local function scheduler()
 	local index = rng:NextInteger(1, 2)
 	local nextStart = serverNow() + FIRST
 	while true do
-		local pause = nextStart - WARN - serverNow()
-		if pause > 0 then
-			task.wait(pause)
+		-- Esperas cortas para que el panel DEV pueda adelantar el evento
+		while serverNow() < nextStart - WARN and not forced do
+			task.wait(0.5)
 		end
-		if onlineCount() == 0 then
+		if onlineCount() == 0 and not forced then
 			nextStart = serverNow() + 60 + WARN
 			continue
 		end
 
-		local info = describe(order[index], serverNow() + WARN)
-		index = index % #order + 1
+		local info = describe(forced or order[index], serverNow() + WARN)
+		if forced then
+			forced = nil -- forzado: el turno normal no avanza
+		else
+			index = index % #order + 1
+		end
 		current = info
 		phase = "announce"
 		remote:FireAllClients("Announce", info)
@@ -621,6 +627,17 @@ function WorldEvents.start(remotes: Folder)
 	end)
 
 	task.spawn(scheduler)
+
+	-- Panel DEV (solo Studio): adelanta el evento; sale por su camino normal, con su aviso
+	for _, entry in { { "rain", "Lluvia de migas" }, { "feast", "Banquete" } } do
+		DevTools.register(entry[1], entry[2], function()
+			if current or forced then
+				return "Ya hay un evento activo"
+			end
+			forced = entry[1]
+			return `{entry[2]}: llega en {WARN} s`
+		end)
+	end
 end
 
 return WorldEvents

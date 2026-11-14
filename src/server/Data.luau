@@ -10,6 +10,9 @@ local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 
+-- Studio comparte DataStore con el juego publicado: sus pruebas (panel DEV, CrunchDebug) van aparte
+local STORE_NAME = Config.Save.Store .. (if RunService:IsStudio() then "_studio" else "")
+
 local Data = {}
 
 local store = nil
@@ -27,7 +30,7 @@ local function getStore()
 		return store
 	end
 	local ok, result = pcall(function()
-		return DataStoreService:GetDataStore(Config.Save.Store)
+		return DataStoreService:GetDataStore(STORE_NAME)
 	end)
 	if ok then
 		store = result

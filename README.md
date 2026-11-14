@@ -136,7 +136,27 @@ flowchart LR
 
 ### Herramientas de Studio
 
-Con el juego en Play, desde la barra de comandos en vista de servidor:
+**Datos de prueba.** En Studio, las partidas y el ranking se guardan en `CrunchSave_v3_studio` y `CrunchTop_v3_studio`, nunca en los del juego publicado. Lo que pruebes en Studio no toca partidas reales.
+
+**Panel DEV.** Con el juego en Play en Studio, botón **DEV** (abajo a la izquierda) o tecla **F2**. Fuera de Studio no existe.
+
+| Pestaña | Qué hace |
+|---|---|
+| Partida | Preparar una capa (1-14) con el árbol y las galerías al tope, desde una partida limpia; dar comida, jalea y enjambres; reiniciar la partida; dar cualquier pase o producto |
+| Eventos | Lanzar ya cada evento (sale con su aviso normal; si ya hay uno en curso, lo dice) |
+| Viaje | Ir a casa o a la entrada de cualquier zona |
+
+El panel se actualiza solo: las capas, zonas, pases y productos salen de `Config`. Para que un **evento nuevo** aparezca en la pestaña Eventos, su módulo de servidor lo registra al arrancar:
+
+```lua
+local DevTools = require(script.Parent.DevTools)
+DevTools.register("id", "Nombre en el panel", function(profile)
+	-- lanzar el evento para quien pulsa; devolver el texto que verá el panel
+	return "Listo"
+end)
+```
+
+**Barra de comandos.** Con el juego en Play, en vista de servidor (aplica a todos los jugadores):
 
 ```lua
 local d = game.ServerScriptService.CrunchDebug
@@ -194,9 +214,9 @@ Las 504 galerías se generan solas desde `Config.MiniTune` (costos, cantidades p
 | Carpeta | Qué hay |
 |---|---|
 | `src/shared` | `Config` (balance, zonas, comidas, árbol, tienda y textos), `Stats` (fórmulas), `FoodModels`, `AntModel` y `AntLook` (cómo cambia la hormiga con las mejoras y la ropa), `Assets` (ids de imágenes, sonidos y música) |
-| `src/server` | `World` (jardín, camino, puertas, hormiguero que crece y su cartel), `HillModel`, `Decor`, `Decor2` y `Decor3` (decorado por tema), `Nest` (huevo dorado y hongos), `FoodService`, `PlayerService` (morder, depositar), `Colony` y `Orders` (obreras, órdenes y escuadrones), `Shop` (compras, excavar, vestidor, enjambrar), `Events`, `Monetize`, `Leaderboard`, `Data`, `Profiles` |
+| `src/server` | `World` (jardín, camino, puertas, hormiguero que crece y su cartel), `HillModel`, `Decor`, `Decor2` y `Decor3` (decorado por tema), `Nest` (huevo dorado y hongos), `FoodService`, `PlayerService` (morder, depositar), `Colony` y `Orders` (obreras, órdenes y escuadrones), `Shop` (compras, excavar, vestidor, enjambrar), `Events`, `Monetize`, `Leaderboard`, `Data`, `Profiles`, `DevTools` (panel DEV y `CrunchDebug`, solo en Studio) |
 | `src/server`, opcionales | `Quests`, `WorldEvents`, `PetService`, `Hazards`, `Allies`, `GoldFood`, `Chain`, `Tunnel`, `Extras`, `Garden`, `Opening`, `Perks` (reglas de las galerías), `CasteService` y `Castes/`, `Social` (despensas y asaltos), `Stalls` (puestos del mapa), `Emotes` |
-| `src/client` | `Tree` (árbol-hormiguero por capas), `Hud`, `Swarm` (dibujo de obreras), `Abilities`, `Places`, `Wardrobe`, `Store`, `Fx`, `Bubble`, `Sfx`, `Comic` (estilo), `State`, `Targeting`, `AntAnim`, `Chain`, `Tunnel` y la parte de cliente de cada módulo opcional (`Life`, `Ambience`, `Allies`, `Extras`…) |
+| `src/client` | `Tree` (árbol-hormiguero por capas), `Hud`, `Swarm` (dibujo de obreras), `Abilities`, `Places`, `Wardrobe`, `Store`, `Fx`, `Bubble`, `Sfx`, `Comic` (estilo), `State`, `Targeting`, `AntAnim`, `Chain`, `Tunnel` y la parte de cliente de cada módulo opcional (`Life`, `Ambience`, `Allies`, `Extras`…), `DevPanel` (el panel DEV, solo en Studio) |
 | `art` | `gen_art.py` genera texturas e iconos en `art/out`; `promo/` tiene el icono y la miniatura del juego |
 | `tools` | `sim.py`, el simulador de balance |
 

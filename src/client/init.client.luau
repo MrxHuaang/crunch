@@ -69,6 +69,21 @@ for _, name in { "Life", "Ambience", "Quests", "WorldEvents", "Pets", "Hazards",
 	end
 end
 
+-- Panel DEV, solo en Studio. El servidor crea Remotes.Dev después de la carpeta, así que se espera un poco.
+if RunService:IsStudio() and script:FindFirstChild("DevPanel") then
+	task.spawn(function()
+		if not remotes:WaitForChild("Dev", 20) then
+			return
+		end
+		local ok, err = pcall(function()
+			require(script.DevPanel).start(remotes)
+		end)
+		if not ok then
+			warn("[CRUNCH!] No se pudo cargar DevPanel", err)
+		end
+	end)
+end
+
 local keyboard = UserInputService.KeyboardEnabled
 local HOW_TO_BITE = if keyboard
 	then "Acércate a una miga y mantén clic para morder"
@@ -94,7 +109,7 @@ end
 
 -- Paneles opcionales: se miran solo si el módulo existe y expone isOpen (con pcall: uno roto no
 -- deja a la hormiga sin morder)
-local OPTIONAL_PANELS = { "CasteClient", "Orders", "Social", "Emotes" } -- Castas, Órdenes, Vecinas, álbum de memes
+local OPTIONAL_PANELS = { "CasteClient", "Orders", "Social", "Emotes", "DevPanel" } -- Castas, Órdenes, Vecinas, álbum de memes, panel DEV
 local optionalPanels: { any } = {}
 for _, name in OPTIONAL_PANELS do
 	local module = script:FindFirstChild(name)

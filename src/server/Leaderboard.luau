@@ -5,6 +5,7 @@
 local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -121,7 +122,8 @@ function Leaderboard.start()
 	end
 
 	local ok, result = pcall(function()
-		return DataStoreService:GetOrderedDataStore(Config.Save.TopStore)
+		-- En Studio, ranking de prueba aparte (ver Data)
+		return DataStoreService:GetOrderedDataStore(Config.Save.TopStore .. (if RunService:IsStudio() then "_studio" else ""))
 	end)
 	store = if ok then result else nil
 

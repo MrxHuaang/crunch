@@ -504,7 +504,7 @@ function Perks.start(remotes: Folder)
 	Events.on("Dig", function(profile)
 		wakeUp(profile, value(profile, "early"))
 	end)
-	Events.on("Rebirth", function(profile)
+	Events.on("RunReset", function(profile)
 		local s = states[profile]
 		if s then
 			-- Lo que dependía de las galerías empieza de cero (se pierden al enjambrar)

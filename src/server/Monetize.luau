@@ -575,14 +575,18 @@ function Monetize.start()
 		end
 	end)
 
-	-- Enjambrar gasta la jalea x2 y pone a cero el doble de comida: lo pagado vuelve
+	-- Reiniciar la partida pone a cero el doble de comida: lo pagado vuelve
+	Events.on("RunReset", function(profile)
+		profile.buffUntil = math.max(profile.buffUntil, profile.paidFoodUntil or 0)
+		applyFeast(profile)
+		Profiles.refresh(profile)
+	end)
+	-- Enjambrar gasta la jalea x2
 	Events.on("Rebirth", function(profile)
 		local paid = paidOf(profile.data)
 		if paid.jellyBoost > 0 then
 			paid.jellyBoost -= 1
 		end
-		profile.buffUntil = math.max(profile.buffUntil, profile.paidFoodUntil or 0)
-		applyFeast(profile)
 		Profiles.refresh(profile)
 	end)
 

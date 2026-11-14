@@ -222,9 +222,19 @@ local function onRebirth(player: Player)
 		return
 	end
 	local data = profile.data
-
 	data.jelly += gain
 	data.rebirths += 1
+	Shop.resetRun(profile)
+	fxRemote:FireClient(player, "Rebirth", gain)
+	Events.fire("Rebirth", profile, gain)
+
+	-- Reaparece en casa, sin carga
+	player:LoadCharacter()
+end
+
+-- Vuelve la partida al principio: lo que se pierde al enjambrar. También lo usa el panel DEV.
+function Shop.resetRun(profile)
+	local data = profile.data
 	data.food = 0
 	data.runFood = 0
 	data.nodes = {}
@@ -248,11 +258,7 @@ local function onRebirth(player: Player)
 	profile.eggAt = nil
 	Colony.clearTrails(profile)
 	Profiles.refresh(profile)
-	fxRemote:FireClient(player, "Rebirth", gain)
-	Events.fire("Rebirth", profile, gain)
-
-	-- Reaparece en casa, sin carga
-	player:LoadCharacter()
+	Events.fire("RunReset", profile)
 end
 
 function Shop.start(remotes: Folder)

@@ -8,6 +8,7 @@ local Colony = require(script.Colony)
 local Nest = require(script.Nest)
 local Leaderboard = require(script.Leaderboard)
 local Shop = require(script.Shop)
+local DevTools = require(script.DevTools)
 
 -- El mundo y los remotos existen antes de aceptar jugadores
 World.build()
@@ -29,6 +30,7 @@ Nest.start(remotes)
 Leaderboard.start()
 require(script.Monetize).start()
 PlayerService.start(remotes)
+DevTools.start(remotes) -- panel DEV y CrunchDebug: solo en Studio, fuera de Studio no crea nada
 
 -- Módulos opcionales (misiones, eventos, mascotas, peligros, aliadas, comida dorada, mordida en
 -- cadena, túnel): se arrancan si existen.

@@ -695,6 +695,13 @@ function Extras.start(remotes: Folder)
 	Colony.shortcut = shortcut
 	Events.on("Bite", onBite)
 	Events.on("Deposit", onDeposit)
+	-- Partida nueva sin enjambrar (panel DEV): data.rebirths no cambia, así que se fuerza la limpieza
+	-- del siguiente tick (buche, mordisco cargado, comida gigante, migas)
+	Events.on("RunReset", function(profile)
+		local s = stateOf(profile)
+		s.runId = nil
+		s.buche = nil
+	end)
 	Players.PlayerRemoving:Connect(forget)
 
 	task.spawn(function()

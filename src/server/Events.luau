@@ -7,7 +7,9 @@
 --   "Deposit"  (profile, credited, fullLoad)      entrega en el hormiguero
 --   "Bought"   (profile, kind, id)                compra en el árbol ("node", "mini", "workers", "royal")
 --   "Dig"      (profile, depth)                   capa nueva
---   "Rebirth"  (profile, jelly)                   enjambre
+--   "Rebirth"  (profile, jelly)                   enjambre (solo el premio; el reinicio es "RunReset")
+--   "RunReset" (profile)                          la partida vuelve a empezar (al enjambrar y desde el
+--                                                panel DEV): quien guarda estado de la partida lo limpia aquí
 --   "Golden"   (profile)                          bocado dorado
 --   "Bite"     (profile, food, chained, position, damage, finished)
 --                                                mordisco tuyo acertado (chained: seguido del anterior;

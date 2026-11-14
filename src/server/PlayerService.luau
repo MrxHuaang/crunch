@@ -3,12 +3,10 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Format = require(ReplicatedStorage.Shared.Format)
-local Stats = require(ReplicatedStorage.Shared.Stats)
 local Data = require(script.Parent.Data)
 local Events = require(script.Parent.Events)
 local FoodService = require(script.Parent.FoodService)
@@ -489,56 +487,6 @@ function PlayerService.start(remotes: Folder)
 		end
 		Data.waitForSaves(25)
 	end)
-
-	-- Herramienta de desarrollo, solo en Studio: dar comida o fijar niveles desde la barra de comandos
-	if RunService:IsStudio() then
-		local debug = Instance.new("BindableEvent")
-		debug.Name = "CrunchDebug"
-		debug.Event:Connect(function(command: string, a: any, b: any)
-			for _, profile in Profiles.all() do
-				local data = profile.data
-				if command == "food" then
-					Profiles.addFood(profile, a)
-				elseif command == "node" then
-					data.nodes[a] = b
-				elseif command == "royal" then
-					data.royal[a] = b
-				elseif command == "workers" then
-					data.workers = a
-				elseif command == "jelly" then
-					data.jelly = a
-				elseif command == "depth" then
-					data.depth = math.clamp(a, 1, Stats.MaxDepth)
-				elseif command == "rebirths" then
-					data.rebirths = a
-				elseif command == "tarta" then
-					data.tartaDone = true
-				elseif command == "grant" then
-					Monetize.debugGrant(profile, a) -- pase o producto, por su id de Config
-				elseif command == "minis" then
-					-- Todas las galerías de las capas ya excavadas
-					for _, def in Config.Minis do
-						if def.layer <= data.depth then
-							data.minis[def.id] = true
-						end
-					end
-				elseif command == "max" then
-					-- Todo el árbol al tope de la capa `a`
-					data.depth = math.clamp(a, 1, Stats.MaxDepth)
-					for _, def in Config.Tree do
-						if not def.unit then
-							data.nodes[def.id] = Stats.available(def, data.depth)
-							if def.layer > data.depth then
-								data.nodes[def.id] = 0
-							end
-						end
-					end
-				end
-				Profiles.refresh(profile)
-			end
-		end)
-		debug.Parent = game:GetService("ServerScriptService")
-	end
 end
 
 return PlayerService

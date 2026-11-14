@@ -887,8 +887,8 @@ function Orders.start(remotes: Folder)
 		end
 	end
 
-	-- Enjambrar: los escuadrones sueltan sus destinos (las capas vuelven a empezar)
-	Events.on("Rebirth", function(profile)
+	-- Partida nueva (enjambre o panel DEV): los escuadrones sueltan sus destinos
+	Events.on("RunReset", function(profile)
 		local st = states[profile]
 		if st then
 			for k = 1, SLOTS do

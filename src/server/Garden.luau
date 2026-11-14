@@ -20,6 +20,7 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Colony = require(script.Parent.Colony)
+local DevTools = require(script.Parent.DevTools)
 local Events = require(script.Parent.Events)
 local FoodService = require(script.Parent.FoodService)
 local Profiles = require(script.Parent.Profiles)
@@ -696,6 +697,29 @@ function Garden.start(remotes: Folder)
 
 	shuffle()
 	nextAt = os.clock() + G.Happen.First
+
+	-- Panel DEV (solo Studio): el suceso sale ya, junto a quien lo pide, y el siguiente se retrasa
+	local busy = {
+		gift = function()
+			return next(gifts) ~= nil
+		end,
+		happy = function()
+			return serverNow() < happyUntil
+		end,
+		loaf = function()
+			return loaf ~= nil
+		end,
+	}
+	for _, entry in { { "gift", "Mariposa con regalo" }, { "happy", "Hora feliz" }, { "loaf", "Pan gigante" } } do
+		DevTools.register(entry[1], entry[2], function(profile)
+			if busy[entry[1]]() then
+				return "Ya hay un evento activo"
+			end
+			runHappening(entry[1], hillPos[profile])
+			nextAt = math.max(nextAt, os.clock() + 45)
+			return entry[2] .. ": ya"
+		end)
+	end
 
 	-- Comida y reparto (cada medio segundo; arranca cuando FoodService ya sembró el jardín)
 	task.spawn(function()

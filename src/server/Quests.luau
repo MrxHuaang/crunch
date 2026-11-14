@@ -656,9 +656,10 @@ local function hookEvents()
 		end)
 	end)
 
-	-- Enjambre: las zonas se cierran otra vez. Lo pendiente se rehace; lo cumplido se respeta.
-	-- Se espera un momento: así da igual si el suceso llega antes o después de rehacer las estadísticas.
-	Events.on("Rebirth", function(profile)
+	-- Partida nueva (enjambre o panel DEV): las zonas se cierran otra vez. Lo pendiente se rehace; lo
+	-- cumplido se respeta. Se espera un momento: así da igual si el suceso llega antes o después de
+	-- rehacer las estadísticas.
+	Events.on("RunReset", function(profile)
 		task.delay(1, function()
 			if not runtime[profile] or Profiles.get(profile.player) ~= profile then
 				return

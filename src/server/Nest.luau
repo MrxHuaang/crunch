@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local DevTools = require(script.Parent.DevTools)
 local Profiles = require(script.Parent.Profiles)
 
 local Nest = {}
@@ -313,6 +314,28 @@ function Nest.start(remotes: Folder)
 				warn("[CRUNCH!] Nido:", err)
 			end
 		end
+	end)
+
+	-- Panel DEV (solo Studio): huevo y hongos listos ya, junto al hormiguero de quien pulsa
+	local function needs(id: string): string
+		return "Necesitas la mejora " .. Config.NodeById[id].name
+	end
+	DevTools.register("egg", "Huevo dorado ya", function(profile)
+		if profile.stats.eggs <= 0 and not profile.eggGift then
+			return needs("eggs")
+		end
+		profile.eggAt = 0
+		return "Huevo dorado: ya"
+	end)
+	DevTools.register("fungi", "Hongos maduros ya", function(profile)
+		local nest = profile.hill and nests[profile.hill]
+		if profile.stats.fungus <= 0 or not nest or #nest.fungi == 0 then
+			return needs("fungus")
+		end
+		for _, fungus in nest.fungi do
+			fungus.readyAt = 0
+		end
+		return "Hongos maduros: ya"
 	end)
 end
 
