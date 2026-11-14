@@ -31,7 +31,13 @@ local PERK_TIME = 0.7
 -- Trípode: delantera izq, media der y trasera izq van juntas; las otras tres en contrafase
 local TRIPOD = { 0, math.pi, math.pi, 0, 0, math.pi }
 
+local LEAN = 0.05 -- radianes de inclinación por cada rad/s de giro
+local LEAN_MAX = 0.14
+
 local localPlayer = Players.LocalPlayer
+-- Reloj propio del mordisco: se para durante la parada de impacto (AntAnim.hitStop)
+local animClock = 0
+local freezeUntil = 0
 local biteAt = -math.huge
 local cheerAt = -math.huge
 local perkAt = -math.huge
@@ -45,6 +51,11 @@ type AntState = {
 	heavy: number,
 	sprint: number,
 	lookVersion: any,
+	yaw: number?, -- rumbo del fotograma anterior (para la inclinación en los giros)
+	lean: number,
+	-- Emote que manda en esta hormiga (AntAnim.override) y cuándo empezó
+	emote: ((number, number, any) -> boolean?)?,
+	emoteAt: number?,
 }
 -- Tablas normales, no débiles: una tabla débil con instancias como clave pierde entradas en cada
 -- recolección de basura aunque la instancia siga viva. Se limpian al destruirse la instancia.
@@ -120,7 +131,7 @@ end
 local function stateOf(character: Model): AntState
 	local st = states[character]
 	if not st then
-		st = { phase = 0, speed = 0, heavy = 0, sprint = 0, lookVersion = character:GetAttribute("LookVersion") }
+		st = { phase = 0, speed = 0, heavy = 0, sprint = 0, lookVersion = character:GetAttribute("LookVersion"), yaw = nil, lean = 0 }
 		states[character] = st
 		character.Destroying:Once(function()
 			states[character] = nil
@@ -209,6 +220,99 @@ local function animateLeg(joint: Motor6D, leg: number, body: CFrame, plant: CFra
 	end
 end
 
+-- Pose de emote: desplazamientos sobre la pose de reposo que rellena la función del emote cada
+-- fotograma. `body` va en el espacio de la raíz a escala 1 (aquí se escala) y mueve el cuerpo entero
+-- como un bloque; head/abdomen giran sobre su unión; legs[i] gira la cadera i en el espacio de la
+-- raíz y knees[i] dobla la rodilla (radianes, + dobla); antennae[1|2] gira cada antena en el espacio
+-- de la cabeza y elbows[1|2] dobla su codo; jaw abre las pinzas (radianes). Lo que no se rellena
+-- queda en reposo. Una sola tabla reutilizada: se vacía antes de cada llamada.
+local emotePose = {
+	body = CFrame.identity,
+	head = CFrame.identity,
+	abdomen = CFrame.identity,
+	legs = {} :: { [number]: CFrame },
+	knees = {} :: { [number]: number },
+	antennae = {} :: { [number]: CFrame },
+	elbows = {} :: { [number]: number },
+	jaw = 0,
+	scale = 1,
+}
+
+-- Llama a la función del emote y escribe su pose. Devuelve false si el emote terminó (o falló):
+-- entonces la animación normal escribe ese mismo fotograma todas las uniones desde su reposo.
+local function runEmote(st: AntState, root: BasePart, head: Instance?, scale: number, dt: number, now: number): boolean
+	local fn: any = st.emote
+	local p = emotePose
+	p.body, p.head, p.abdomen, p.jaw, p.scale = CFrame.identity, CFrame.identity, CFrame.identity, 0, scale
+	table.clear(p.legs)
+	table.clear(p.knees)
+	table.clear(p.antennae)
+	table.clear(p.elbows)
+	local ok, keep = pcall(fn, dt, now - (st.emoteAt or now), p)
+	if not ok or keep == false then
+		if not ok then
+			warn("[CRUNCH!] Emote:", keep)
+		end
+		if st.emote == fn then
+			st.emote = nil
+		end
+		return false
+	end
+
+	local body = p.body
+	body = CFrame.new(body.Position * scale) * body.Rotation
+	for _, joint in root:GetChildren() do
+		if joint:IsA("Motor6D") then
+			local leg = tonumber(joint.Name:match("^Leg(%d)$"))
+			if leg then
+				local c0 = base(joint)
+				joint.C0 = body * CFrame.new(c0.Position) * (p.legs[leg] or CFrame.identity) * c0.Rotation
+				local upper = joint.Part1
+				local knee = upper and upper:FindFirstChild("Knee" .. leg)
+				if knee and knee:IsA("Motor6D") then
+					knee.C0 = base(knee) * CFrame.Angles(0, 0, p.knees[leg] or 0)
+				end
+			elseif joint.Name == "HeadJoint" then
+				joint.C0 = body * base(joint) * p.head
+			elseif joint.Name == "AbdomenJoint" then
+				joint.C0 = body * base(joint) * p.abdomen
+			end
+		elseif joint:IsA("Weld") then
+			local part1 = joint.Part1
+			if part1 and part1.Name == "Thorax" then
+				writeWeld(joint, body * weldRest(joint))
+			end
+		end
+	end
+	if head then
+		for _, joint in head:GetChildren() do
+			if joint:IsA("Motor6D") and (joint.Name == "Antenna1" or joint.Name == "Antenna2") then
+				local i = if joint.Name == "Antenna1" then 1 else 2
+				local c0 = base(joint)
+				joint.C0 = CFrame.new(c0.Position) * (p.antennae[i] or CFrame.identity) * c0.Rotation
+				local scape = joint.Part1
+				local elbow = scape and scape:FindFirstChild("AntennaElbow" .. i)
+				if elbow and elbow:IsA("Motor6D") then
+					elbow.C0 = base(elbow) * CFrame.Angles(0, 0, p.elbows[i] or 0)
+				end
+			elseif joint:IsA("Weld") then
+				local part1 = joint.Part1
+				if part1 and part1.Name == "Mandible" and part1:IsA("BasePart") then
+					local rest = weldRest(joint)
+					if p.jaw == 0 then
+						writeWeld(joint, rest)
+					else
+						local s = if rest.X < 0 then -1 else 1
+						local hinge = (part1.Size.Z - AntModel.JawOverlap * scale) / 2
+						writeWeld(joint, rest * CFrame.new(0, 0, hinge) * CFrame.Angles(0, -s * p.jaw, 0) * CFrame.new(0, 0, -hinge))
+					end
+				end
+			end
+		end
+	end
+	return true
+end
+
 local function animate(player: Player, character: Model, now: number, dt: number)
 	local root = character:FindFirstChild("HumanoidRootPart")
 	if not root or not root:IsA("BasePart") then
@@ -221,8 +325,14 @@ local function animate(player: Player, character: Model, now: number, dt: number
 	local version = character:GetAttribute("LookVersion")
 	if version ~= st.lookVersion then
 		st.lookVersion = version
+		st.emote = nil -- reconstruida a mitad de un emote: se corta y vuelve la animación normal
 		forgetIdleWelds(root)
 		forgetIdleWelds(head)
+	end
+
+	-- Un emote (client/Emotes) tiene el control: este fotograma no se anima nada más
+	if st.emote and runEmote(st, root, head, character:GetScale(), dt, now) then
+		return
 	end
 
 	local scale = character:GetScale()
@@ -247,15 +357,34 @@ local function animate(player: Player, character: Model, now: number, dt: number
 		st.sprint = 0
 	end
 
+	-- Inclinación en los giros: el cuerpo se tumba hacia dentro de la curva según lo rápido que gira
+	-- y lo rápido que corre. Entra en el balanceo (roll) del cuerpo, que los pies ya compensan.
+	local look = root.CFrame.LookVector
+	local yawNow = math.atan2(-look.X, -look.Z)
+	local turnRate = 0
+	if st.yaw and dt > 0 then
+		turnRate = ((yawNow - st.yaw + math.pi) % TAU - math.pi) / dt
+	end
+	st.yaw = yawNow
+	local leanGoal = if st.speed > 0.5 then math.clamp(turnRate * LEAN * math.min(st.speed / walk, 1.2), -LEAN_MAX, LEAN_MAX) else 0
+	st.lean += (leanGoal - st.lean) * math.min(1, dt * 8)
+	if leanGoal == 0 and math.abs(st.lean) < 0.002 then
+		st.lean = 0
+	end
+
 	local heavy, sprint = st.heavy, st.sprint
 	local move = math.clamp(st.speed / walk, 0, 1.2)
 	local moving = st.speed > 0.5
+	local frozen = isLocal and now < freezeUntil
 	-- Fase integrada: cambiar de velocidad no da tirones. Con carga llena el paso es más lento.
-	st.phase = (st.phase + dt * (7 + st.speed * 0.8) * (1 - 0.3 * heavy)) % TAU
+	-- Durante la parada de impacto tu hormiga se queda congelada un instante.
+	if not frozen then
+		st.phase = (st.phase + dt * (7 + st.speed * 0.8) * (1 - 0.3 * heavy)) % TAU
+	end
 	local beat = st.phase
 
-	local biteK = if isLocal then lungeCurve((now - biteAt) / BITE_TIME) else 0
-	local jaw = if isLocal then jawCurve((now - biteAt) / BITE_TIME) else 0
+	local biteK = if isLocal then lungeCurve((animClock - biteAt) / BITE_TIME) else 0
+	local jaw = if isLocal then jawCurve((animClock - biteAt) / BITE_TIME) else 0
 	local cheerU = if isLocal then (now - cheerAt) / CHEER_TIME else 1
 	local hop = hopCurve(cheerU)
 
@@ -265,7 +394,7 @@ local function animate(player: Player, character: Model, now: number, dt: number
 	local sink = -0.12 * heavy
 	local lunge = 0.16 * biteK
 	local pitch = -(0.05 * move + 0.11 * sprint + 0.04 * heavy * move) - 0.05 * biteK
-	local roll = if moving then math.sin(beat) * 0.035 * move else 0
+	local roll = (if moving then math.sin(beat) * 0.035 * move else 0) + st.lean
 	local planted = bob == 0 and sink == 0 and lunge == 0 and pitch == 0 and roll == 0
 	local plant: CFrame? = nil -- parte de la pose que los pies deben compensar (todo menos el salto)
 	if not planted then
@@ -371,7 +500,18 @@ end
 
 -- Mordisco de tu hormiga: tirón de cabeza y pinzas que se cierran (≈0,18 s)
 function AntAnim.bite()
-	biteAt = os.clock()
+	biteAt = animClock
+end
+
+-- Parada de impacto: tu hormiga se congela `duration` segundos. Con `snap`, si el tirón del
+-- mordisco ya pasó su punto fuerte (el servidor tarda en confirmar), la cabeza vuelve de golpe al
+-- máximo empuje con las pinzas abiertas, se congela ahí y luego las pinzas se cierran: "¡ÑAC!".
+function AntAnim.hitStop(duration: number, snap: boolean?)
+	local u = (animClock - biteAt) / BITE_TIME
+	if snap and u > 0.3 then
+		biteAt = animClock - BITE_TIME * 0.3
+	end
+	freezeUntil = math.max(freezeUntil, os.clock() + math.clamp(duration, 0, 0.15))
 end
 
 -- Saltito con molinillo de antenas, para cuando compras algo
@@ -379,10 +519,23 @@ function AntAnim.cheer()
 	cheerAt = os.clock()
 end
 
+-- Emotes: `fn(dt, t, pose)` toma el control de las uniones de UNA hormiga (t = segundos desde que
+-- empezó) y rellena `pose` (ver emotePose). Devuelve false para acabar; nil suelta el control ya.
+-- Al acabar, cortarse o reconstruirse la hormiga (LookVersion), la animación normal vuelve a
+-- escribir todo desde la pose de reposo, así que no queda ninguna unión torcida.
+function AntAnim.override(character: Model, fn: ((number, number, any) -> boolean?)?)
+	local st = stateOf(character)
+	st.emote = fn
+	st.emoteAt = if fn then os.clock() else nil
+end
+
 function AntAnim.start()
 	RunService.RenderStepped:Connect(function(dt)
 		local now = os.clock()
 		dt = math.min(dt, 0.1)
+		if now >= freezeUntil then
+			animClock += dt
+		end
 
 		-- Las antenas se levantan un momento cada vez que aparece una comida a tiro
 		local target = Targeting.current()
