@@ -1,0 +1,718 @@
+-- HUD: caja de narración con la Comida (arriba, al centro, lejos del chat de Roblox) y sus etiquetas,
+-- la tira de narración con lo que toca hacer (abajo, sobre las casillas de migas),
+-- los botones del lado izquierdo y el interruptor de la música en la esquina.
+--
+-- Regla de oro: el centro de la pantalla es de la hormiga. Ocupa el 56 % central de ancho y del
+-- 22 % al 82 % de alto; ahí no vive nada fijo. Todo se pega a los bordes y es compacto
+-- (medidas de diseño pensadas para ~1080 px de alto; Hud.fitScale las adapta a cada pantalla).
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TextService = game:GetService("TextService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local Assets = require(ReplicatedStorage.Shared.Assets)
+local Config = require(ReplicatedStorage.Shared.Config)
+local Format = require(ReplicatedStorage.Shared.Format)
+local Comic = require(script.Parent.Comic)
+local Sfx = require(script.Parent.Sfx)
+
+local Hud = {}
+
+local MAX_SLOTS = 10
+local SLOT_TILTS = { -7, 4, -3, 8, -5, 3, -8, 5, -2, 6 }
+local COMBO_FADE = 1.8 -- segundos sin morder hasta que se esconde la racha
+
+-- Escala: 1 a 1000 px de alto de pantalla, entre 0.7 (letra legible en móvil) y 1.25.
+-- Lo que se toca nunca baja de 44 px reales en pantallas táctiles.
+local SCALE_REFERENCE = 1000
+local SCALE_MIN = 0.7
+local SCALE_MAX = 1.25
+local MIN_TAP = 44
+local TOUCH = UserInputService.TouchEnabled
+local PHONE = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+-- Caja de la Comida (diseño)
+local BOX_W = 184
+local BOX_H = 60
+local SIDE_GAP = 8 -- entre la caja y lo que va a sus lados
+
+-- Botones de la columna izquierda (diseño)
+local SIDE_W = 136
+local SIDE_H = 44
+local SIDE_GAP_Y = 6
+
+-- Tira de narración: crece con el texto hasta HINT_MAX_WIDTH; si no cabe, dos líneas;
+-- si aun así no cabe, letra más pequeña. Nunca "…".
+local HINT_MAX_WIDTH = 600
+local HINT_PAD_X = 14
+local HINT_PAD_Y = 6
+local HINT_SIZES = { 20, 18, 16 }
+local HINT_SHOW = 8 -- segundos que se ve una pista que no es urgente
+local HINT_REST = 30 -- una pista que ya se escondió sola no vuelve antes de esto
+
+local gui: ScreenGui
+local foodNumber: TextLabel
+local foodPunch: UIScale
+local jellyTag: TextLabel
+local workerTag: TextLabel
+local depthTag: TextLabel
+local buffTag: TextLabel
+local comboTag: TextLabel
+local comboPunch: UIScale
+local dock: Frame
+local slotRow: Frame
+local slots: { Frame } = {}
+local slotCapacity = -1
+local countLabel: TextLabel?
+local lastCarry = 0
+local badge: ImageLabel
+local storeHolder: Frame
+
+local hintHolder: Frame? = nil
+local hintShadow: Frame
+local hintLabel: TextLabel
+local hintPunch: UIScale
+local hintText: string? = nil
+local hintFlip = false
+local hintToken = 0
+local hintRested: { [string]: number } = {} -- texto -> cuándo se escondió solo
+
+local shownDepth = 0
+local buffUntil = 0
+local lastCombo = 0
+local comboAt = 0
+
+Hud.onAnthill = nil :: (() -> ())?
+Hud.onStore = nil :: (() -> ())?
+Hud.onWardrobe = nil :: (() -> ())?
+
+-- Escala de un widget del HUD según el alto de la pantalla. `tap` es el lado más pequeño
+-- (en diseño) de lo que se pulsa dentro: en táctil la escala nunca lo deja por debajo de 44 px.
+function Hud.fitScale(widget: GuiObject, tap: number?): UIScale
+	local scale = Instance.new("UIScale")
+	scale.Parent = widget
+	local function update()
+		local camera = Workspace.CurrentCamera
+		if not camera then
+			return
+		end
+		local value = math.clamp(camera.ViewportSize.Y / SCALE_REFERENCE, SCALE_MIN, SCALE_MAX)
+		if tap and TOUCH then
+			value = math.max(value, MIN_TAP / tap)
+		end
+		scale.Scale = value
+	end
+	update()
+	local camera = Workspace.CurrentCamera
+	if camera then
+		camera:GetPropertyChangedSignal("ViewportSize"):Connect(update)
+	end
+	return scale
+end
+
+local function tag(parent: Instance, color: Color3, order: number): (TextLabel, UIScale)
+	local label = Comic.label(parent, "", Comic.Display, 17, Comic.Ink)
+	label.Size = UDim2.fromOffset(0, 24)
+	label.AutomaticSize = Enum.AutomaticSize.X
+	label.BackgroundTransparency = 0
+	label.BackgroundColor3 = color
+	label.LayoutOrder = order
+	label.Rotation = if order % 2 == 0 then 2 else -2
+	label.Visible = false
+	Comic.ink(label, 3, true)
+	local pad = Instance.new("UIPadding")
+	pad.PaddingLeft = UDim.new(0, 8)
+	pad.PaddingRight = UDim.new(0, 8)
+	pad.Parent = label
+	local scale = Instance.new("UIScale")
+	scale.Parent = label
+	return label, scale
+end
+
+local function stack(parent: Instance, horizontal: boolean, align: Enum.HorizontalAlignment, padding: number): Frame
+	local frame = Comic.frame(parent)
+	frame.AutomaticSize = Enum.AutomaticSize.XY
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = if horizontal then Enum.FillDirection.Horizontal else Enum.FillDirection.Vertical
+	layout.HorizontalAlignment = align
+	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	layout.Padding = UDim.new(0, padding)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = frame
+	return frame
+end
+
+-- Arriba al centro, en la franja superior (nunca baja del 22 % del alto):
+--   [poción / racha]  [ COMIDA ]  [aviso de evento]
+--                [capa · obreras · jalea]
+-- Lo pasajero va a los lados de la caja, no debajo, así nada empuja hacia el centro.
+local function buildTop()
+	local top = Comic.frame(gui)
+	top.Name = "Top"
+	top.AnchorPoint = Vector2.new(0.5, 0)
+	top.Position = UDim2.new(0.5, 0, 0, 6)
+	top.Size = UDim2.fromOffset(BOX_W, BOX_H + 34)
+	Hud.fitScale(top)
+
+	local holder, face = Comic.box(top, UDim2.fromOffset(BOX_W, BOX_H), Comic.Yellow, 4)
+	holder.Name = "FoodCaption"
+	holder.AnchorPoint = Vector2.new(0.5, 0)
+	holder.Position = UDim2.new(0.5, 0, 0, 0)
+	holder.Rotation = -2
+	Comic.boil(holder, 0.45)
+
+	-- Trama de imprenta en la mitad derecha
+	local shade = Comic.frame(face)
+	shade.Position = UDim2.fromScale(0.42, 0)
+	shade.Size = UDim2.fromScale(0.58, 1)
+	Comic.halftone(shade, Comic.Red, 0)
+
+	local title = Comic.label(face, "Comida", Comic.Body, 15, Comic.Ink)
+	title.Position = UDim2.fromOffset(12, 3)
+	title.Size = UDim2.new(1, -24, 0, 16)
+	title.TextXAlignment = Enum.TextXAlignment.Left
+
+	-- Las cifras largas encogen en vez de salirse de la caja
+	foodNumber = Comic.label(face, "0", Comic.Display, 40, Comic.Ink)
+	foodNumber.Position = UDim2.fromOffset(12, 17)
+	foodNumber.Size = UDim2.new(1, -24, 0, 40)
+	foodNumber.TextXAlignment = Enum.TextXAlignment.Left
+	foodNumber.TextScaled = true
+	foodNumber.ZIndex = 2
+	local numberLimit = Instance.new("UITextSizeConstraint")
+	numberLimit.MaxTextSize = 40
+	numberLimit.Parent = foodNumber
+	foodPunch = Instance.new("UIScale")
+	foodPunch.Parent = foodNumber
+
+	-- Debajo, una sola fila con lo de siempre
+	local steady = stack(top, true, Enum.HorizontalAlignment.Center, 8)
+	steady.Name = "Tags"
+	steady.AnchorPoint = Vector2.new(0.5, 0)
+	steady.Position = UDim2.new(0.5, 0, 0, BOX_H + 8)
+	depthTag = tag(steady, Comic.DirtLight, 1)
+	workerTag = tag(steady, Comic.Paper, 2)
+	jellyTag = tag(steady, Comic.Cyan, 3)
+
+	-- A la izquierda de la caja, apiladas: poción y racha (pasajeras)
+	local fleeting = stack(top, false, Enum.HorizontalAlignment.Right, 6)
+	fleeting.Name = "Fleeting"
+	fleeting.AnchorPoint = Vector2.new(1, 0)
+	fleeting.Position = UDim2.new(0.5, -(BOX_W / 2 + SIDE_GAP), 0, 2)
+	buffTag = tag(fleeting, Comic.Green, 1)
+	comboTag, comboPunch = tag(fleeting, Comic.Red, 2)
+
+	-- A la derecha de la caja: hueco para avisos compactos de otros módulos (eventos)
+	dock = stack(top, false, Enum.HorizontalAlignment.Left, 6)
+	dock.Name = "Dock"
+	dock.AnchorPoint = Vector2.new(0, 0)
+	dock.Position = UDim2.new(0.5, BOX_W / 2 + SIDE_GAP, 0, 4)
+end
+
+-- Abajo al centro: la tira de narración y, debajo, las casillas de migas. Escalan juntas.
+local function buildBottom()
+	local bottom = Comic.frame(gui)
+	bottom.Name = "Bottom"
+	bottom.AnchorPoint = Vector2.new(0.5, 1)
+	bottom.Position = UDim2.new(0.5, 0, 1, -12)
+	bottom.Size = UDim2.fromOffset(HINT_MAX_WIDTH, 120)
+	Hud.fitScale(bottom)
+
+	slotRow = Comic.frame(bottom)
+	slotRow.Name = "CarrySlots"
+	slotRow.AnchorPoint = Vector2.new(0.5, 1)
+	slotRow.Position = UDim2.new(0.5, 0, 1, 0)
+	slotRow.AutomaticSize = Enum.AutomaticSize.XY
+
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	layout.Padding = UDim.new(0, 5)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = slotRow
+
+	-- Tira de papel con sombra dura. Su tamaño lo calcula fitHint según el texto.
+	local holder = Comic.frame(bottom)
+	holder.Name = "Hint"
+	holder.AnchorPoint = Vector2.new(0.5, 1)
+	holder.Position = UDim2.new(0.5, 0, 1, -38)
+	holder.Size = UDim2.fromOffset(200, 32)
+	holder.Visible = false
+	hintPunch = Instance.new("UIScale")
+	hintPunch.Parent = holder
+
+	hintShadow = Comic.frame(holder, Comic.Ink)
+	hintShadow.Name = "Shadow"
+	hintShadow.Size = UDim2.fromScale(1, 1)
+	hintShadow.Position = UDim2.fromOffset(4, 4)
+	hintShadow.ZIndex = 1
+
+	hintLabel = Comic.label(holder, "", Comic.Body, HINT_SIZES[1], Comic.Ink)
+	hintLabel.Size = UDim2.fromScale(1, 1)
+	hintLabel.BackgroundTransparency = 0
+	hintLabel.BackgroundColor3 = Comic.Paper
+	hintLabel.ZIndex = 2
+	Comic.ink(hintLabel, 3, true)
+	local pad = Instance.new("UIPadding")
+	pad.PaddingLeft = UDim.new(0, HINT_PAD_X)
+	pad.PaddingRight = UDim.new(0, HINT_PAD_X)
+	pad.Parent = hintLabel
+
+	hintHolder = holder
+end
+
+local function sideButton(parent: Instance, order: number, color: Color3, text: string, icon: string?, key: string?): (Frame, TextButton, TextLabel)
+	local holder, face = Comic.button(parent, UDim2.fromOffset(SIDE_W, SIDE_H), color, 4)
+	holder.LayoutOrder = order
+	holder.Rotation = if order % 2 == 0 then -1 else 1
+
+	local x = 12
+	if icon then
+		local image = Comic.image(face, icon)
+		image.Position = UDim2.fromOffset(7, 7)
+		image.Size = UDim2.fromOffset(30, 30)
+		x = 40
+	end
+	-- Nombres largos ("Hormiguero") encogen un poco antes que salirse del botón
+	local label = Comic.label(face, text, Comic.Display, 22, Comic.Ink)
+	label.Position = UDim2.fromOffset(x, 4)
+	label.Size = UDim2.new(1, -x - 8, 1, -8)
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.TextScaled = true
+	local limit = Instance.new("UITextSizeConstraint")
+	limit.MaxTextSize = 22
+	limit.MinTextSize = 14
+	limit.Parent = label
+
+	if key and UserInputService.KeyboardEnabled then
+		local chip = Comic.label(holder, key, Comic.Display, 15, Comic.Ink)
+		chip.AnchorPoint = Vector2.new(0.5, 0.5)
+		chip.Position = UDim2.new(1, -3, 0, 2)
+		chip.Size = UDim2.fromOffset(22, 22)
+		chip.BackgroundTransparency = 0
+		chip.BackgroundColor3 = Comic.Yellow
+		chip.Rotation = 8
+		chip.ZIndex = 3
+		Comic.ink(chip, 2.5, true)
+	end
+	return holder, face, label
+end
+
+-- Estallido rojo con "!" en la esquina de un botón: hay algo esperándote ahí
+local function alertBadge(holder: Frame): ImageLabel
+	local burst = Comic.burst(holder, 30, Comic.Red)
+	burst.Position = UDim2.new(0, 3, 0, 3)
+	burst.ZIndex = 4
+	burst.Visible = false
+	local mark = Comic.label(burst, "!", Comic.Display, 19, Comic.Paper)
+	mark.Size = UDim2.fromScale(1, 1)
+	mark.ZIndex = 5
+	Comic.boil(burst, 9)
+	return burst
+end
+
+local function call(callback: (() -> ())?)
+	if callback then
+		callback()
+	end
+end
+
+local sideColumn: Frame
+local extraButtons = 0
+
+local function buildSide()
+	-- Pegada al borde izquierdo. En escritorio, centrada en alto (bajo el chat de Roblox);
+	-- en móvil, arriba, para dejar libre la zona del joystick de abajo a la izquierda.
+	local column = Comic.frame(gui)
+	column.Name = "Side"
+	if PHONE then
+		column.AnchorPoint = Vector2.new(0, 0)
+		column.Position = UDim2.new(0, 10, 0, 6)
+	else
+		column.AnchorPoint = Vector2.new(0, 0.5)
+		column.Position = UDim2.new(0, 12, 0.5, 0)
+	end
+	column.AutomaticSize = Enum.AutomaticSize.XY
+	Hud.fitScale(column, SIDE_H)
+	sideColumn = column
+
+	local layout = Instance.new("UIListLayout")
+	layout.Padding = UDim.new(0, SIDE_GAP_Y)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = column
+
+	local hillHolder, hillFace = sideButton(column, 1, Comic.DirtLight, "Hormiguero", Assets.Icons.anthill, "Q")
+	hillFace.MouseButton1Click:Connect(function()
+		call(Hud.onAnthill)
+	end)
+	badge = alertBadge(hillHolder) -- hay algo que excavar
+
+	local _, wardrobeFace = sideButton(column, 2, Comic.Paper, "Vestidor", nil, "V")
+	wardrobeFace.MouseButton1Click:Connect(function()
+		call(Hud.onWardrobe)
+	end)
+
+	local holder, storeFace = sideButton(column, 50, Comic.Cyan, "Tienda", nil, nil)
+	storeHolder = holder
+	storeHolder.Visible = false
+	storeFace.MouseButton1Click:Connect(function()
+		call(Hud.onStore)
+	end)
+end
+
+-- Interruptor redondo de la música, abajo a la izquierda. No se recuerda entre partidas.
+local function buildMute()
+	local corner = Comic.frame(gui)
+	corner.Name = "Music"
+	corner.AnchorPoint = Vector2.new(0, 1)
+	corner.Position = UDim2.new(0, 14, 1, -14)
+	corner.Size = UDim2.fromOffset(48, 48)
+	Hud.fitScale(corner, 44)
+
+	local holder, face = Comic.button(corner, UDim2.fromOffset(44, 44), Comic.Paper, 4)
+	holder.Rotation = -6
+	Comic.round(face)
+	Comic.round(holder:FindFirstChild("Shadow") :: Frame)
+
+	local note = Comic.label(face, "♪", Comic.Display, 30, Comic.Ink)
+	note.Size = UDim2.fromScale(1, 1)
+	note.ZIndex = 2
+
+	-- Tachón rojo cuando está en silencio
+	local strike = Comic.frame(face, Comic.Red)
+	strike.AnchorPoint = Vector2.new(0.5, 0.5)
+	strike.Position = UDim2.fromScale(0.5, 0.5)
+	strike.Size = UDim2.fromOffset(46, 6)
+	strike.Rotation = -45
+	strike.ZIndex = 3
+	Comic.ink(strike, 2, true)
+
+	local muted = Sfx.isMuted()
+	local function paint()
+		face.BackgroundColor3 = if muted then Comic.DirtLight else Comic.Paper
+		note.TextTransparency = if muted then 0.5 else 0
+		strike.Visible = muted
+	end
+	paint()
+
+	face.MouseButton1Click:Connect(function()
+		muted = not muted
+		Sfx.setMuted(muted)
+		paint()
+	end)
+end
+
+local function makeSlot(order: number): Frame
+	local cell = Comic.frame(slotRow)
+	cell.Size = UDim2.fromOffset(28, 28)
+	cell.LayoutOrder = order
+
+	local crumb = Comic.frame(cell, Comic.Paper)
+	crumb.Name = "Crumb"
+	crumb.AnchorPoint = Vector2.new(0.5, 0.5)
+	crumb.Position = UDim2.fromScale(0.5, 0.5)
+	crumb.Size = UDim2.fromOffset(22, 22)
+	crumb.Rotation = SLOT_TILTS[(order - 1) % #SLOT_TILTS + 1]
+	Comic.ink(crumb, 2.5)
+
+	local scale = Instance.new("UIScale")
+	scale.Parent = crumb
+	return crumb
+end
+
+local function rebuildSlots(capacity: number)
+	for _, child in slotRow:GetChildren() do
+		if child:IsA("GuiObject") then
+			child:Destroy()
+		end
+	end
+	table.clear(slots)
+	countLabel = nil
+	slotCapacity = capacity
+
+	if capacity <= MAX_SLOTS then
+		for i = 1, capacity do
+			slots[i] = makeSlot(i)
+		end
+	else
+		-- Con mucha capacidad ya no caben casillas: una miga y la cuenta
+		slots[1] = makeSlot(1)
+		local label = Comic.label(slotRow, "", Comic.Display, 26, Comic.Paper)
+		label.LayoutOrder = 2
+		label.AutomaticSize = Enum.AutomaticSize.XY
+		Comic.ink(label, 2.5)
+		countLabel = label
+	end
+end
+
+local function paintSlot(crumb: Frame, filled: boolean, color: Color3)
+	crumb.BackgroundColor3 = if filled then color else Comic.Paper
+	-- La casilla vacía conserva el borde de tinta entero para leerse sobre cualquier fondo
+	crumb.BackgroundTransparency = if filled then 0 else 0.45
+end
+
+-- Mide el texto con la fuente real. Devuelve nil si el motor no responde.
+local function measure(text: string, size: number, width: number): Vector2?
+	local params = Instance.new("GetTextBoundsParams")
+	params.Text = text
+	params.Font = Comic.Body
+	params.Size = size
+	params.Width = width
+	local ok, bounds = pcall(function()
+		return TextService:GetTextBoundsAsync(params)
+	end)
+	return if ok then bounds else nil
+end
+
+-- Tamaño de la tira: una línea si cabe; si no, dos líneas al ancho máximo; si tampoco,
+-- letra más pequeña. Devuelve (ancho de texto, alto de texto, tamaño de letra, ¿envuelve?).
+local function fitHint(text: string)
+	local inner = HINT_MAX_WIDTH - HINT_PAD_X * 2
+	local lastHeight, lastSize = 0, HINT_SIZES[#HINT_SIZES]
+	for _, size in HINT_SIZES do
+		local single = measure(text, size, 100000)
+		if not single then
+			return nil, 0, 0, false
+		end
+		if single.X <= inner then
+			return single.X, single.Y, size, false
+		end
+		local wrapped = measure(text, size, inner)
+		if not wrapped then
+			return nil, 0, 0, false
+		end
+		lastHeight, lastSize = wrapped.Y, size
+		if wrapped.Y <= single.Y * 2 + 2 then
+			return inner, wrapped.Y, size, true
+		end
+	end
+	-- Ni a la letra más pequeña cabe en dos líneas: se deja crecer en alto
+	return inner, lastHeight, lastSize, true
+end
+
+local function layoutHint(width: number, height: number, size: number, wrapped: boolean)
+	local holder = hintHolder :: Frame
+	hintLabel.TextSize = size
+	hintLabel.TextWrapped = wrapped
+	hintLabel.TextScaled = false
+	-- +4 de holgura: el redondeo nunca parte la última palabra en una línea
+	holder.Size = UDim2.fromOffset(math.ceil(width) + HINT_PAD_X * 2 + 4, math.ceil(height) + HINT_PAD_Y * 2)
+end
+
+local function hideHint()
+	hintToken += 1
+	if hintHolder then
+		hintHolder.Visible = false
+	end
+end
+
+local function showHint(urgent: boolean)
+	local holder = hintHolder
+	local text = hintText
+	if not holder then
+		return
+	end
+	if not text then
+		hideHint()
+		return
+	end
+	hintToken += 1
+	local token = hintToken
+	task.spawn(function()
+		local width, height, size, wrapped = fitHint(text)
+		if hintToken ~= token then
+			return
+		end
+		if width then
+			layoutHint(width, height, size, wrapped)
+		else
+			-- Sin medidas: caja fija de dos líneas, el texto se ajusta dentro
+			holder.Size = UDim2.fromOffset(HINT_MAX_WIDTH, HINT_SIZES[1] * 2 + HINT_PAD_Y * 2 + 6)
+			hintLabel.TextWrapped = true
+			hintLabel.TextScaled = true
+		end
+		hintLabel.Text = text
+		-- Cada texto nuevo cae un poco torcido hacia el otro lado, como recortado a mano
+		hintFlip = not hintFlip
+		holder.Rotation = if hintFlip then -1.2 else 1
+		holder.Visible = true
+		Comic.punch(hintPunch, 0.55)
+	end)
+	-- Las pistas de tutorial se apartan solas; vuelven solo si cambia la situación
+	if not urgent then
+		task.delay(HINT_SHOW, function()
+			if hintToken == token and hintText == text then
+				hintRested[text] = os.clock()
+				hideHint()
+			end
+		end)
+	end
+end
+
+-- Bucle ligero: cuenta atrás de la poción y caducidad de la racha
+local function tickTimers()
+	while true do
+		task.wait(0.25)
+		local left = buffUntil - Workspace:GetServerTimeNow()
+		if left > 0 then
+			local seconds = math.ceil(left)
+			buffTag.Text = string.format("Comida x2  %d:%02d", seconds // 60, seconds % 60)
+			buffTag.Visible = true
+		elseif buffTag.Visible then
+			buffTag.Visible = false
+		end
+		if comboTag.Visible and os.clock() - comboAt > COMBO_FADE then
+			comboTag.Visible = false
+			lastCombo = 0
+		end
+	end
+end
+
+function Hud.start(): ScreenGui
+	gui = Instance.new("ScreenGui")
+	gui.Name = "Hud"
+	gui.ResetOnSpawn = false
+	gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	buildTop()
+	buildBottom()
+	buildSide()
+	buildMute()
+	showHint(false)
+	task.spawn(tickTimers)
+	return gui
+end
+
+-- Hueco a la derecha de la caja de Comida, fuera del centro de la pantalla, para avisos
+-- compactos de otros módulos (p. ej. el evento en curso). Escala con la cabecera.
+function Hud.dock(): Frame
+	return dock
+end
+
+function Hud.setFood(value: number)
+	foodNumber.Text = Format.short(value)
+end
+
+function Hud.punchFood()
+	Comic.punch(foodPunch, 1.35)
+end
+
+function Hud.setTags(jelly: number, rebirths: number, workers: number, cap: number)
+	jellyTag.Visible = jelly > 0 or rebirths > 0
+	jellyTag.Text = "Jalea " .. Format.short(jelly)
+	workerTag.Visible = cap > 0
+	workerTag.Text = workers .. "/" .. cap .. " obreras"
+end
+
+-- Capa excavada y zona más honda a la que llegas.
+function Hud.setDepth(depth: number)
+	if depth == shownDepth then
+		return
+	end
+	shownDepth = depth
+	local zone = Config.Zones[depth]
+	depthTag.Text = "Capa " .. depth .. (if zone then " · " .. zone.name else "")
+	depthTag.Visible = true
+end
+
+-- Comida doble hasta este instante (hora del servidor). La cuenta atrás va sola.
+function Hud.setBuff(untilTime: number)
+	buffUntil = untilTime
+end
+
+-- Racha de mordiscos seguidos. 0 la esconde; cada subida rebota.
+function Hud.setCombo(count: number)
+	if count <= 0 then
+		comboTag.Visible = false
+		lastCombo = 0
+		return
+	end
+	comboAt = os.clock()
+	comboTag.Text = "Racha x" .. count
+	comboTag.Visible = true
+	if count > lastCombo then
+		Comic.punch(comboPunch, 1.3)
+	end
+	lastCombo = count
+end
+
+-- Tira de narración: lo que toca hacer ahora. nil la esconde.
+-- El mismo texto repetido cuenta como "ya mostrado". Salvo que sea `urgent`, la pista se
+-- esconde sola a los 8 s y no vuelve hasta que la situación cambie (otro texto) y, si es la
+-- misma que ya se apartó, tras un rato.
+function Hud.setHint(text: string?, urgent: boolean?)
+	if text == hintText then
+		return
+	end
+	hintText = text
+	if text and not urgent then
+		local rested = hintRested[text]
+		if rested and os.clock() - rested < HINT_REST then
+			hideHint()
+			return
+		end
+	end
+	showHint(urgent == true)
+end
+
+function Hud.setCarry(carry: number, capacity: number, color: Color3?)
+	if capacity ~= slotCapacity then
+		rebuildSlots(capacity)
+		lastCarry = 0
+	end
+	local fill = color or Comic.Crumb
+
+	if countLabel then
+		countLabel.Text = Format.short(carry) .. "/" .. Format.short(capacity)
+		paintSlot(slots[1], carry > 0, fill)
+		if carry > lastCarry then
+			Comic.punch(slots[1]:FindFirstChildOfClass("UIScale") :: UIScale, 1.4)
+		end
+	else
+		for i, crumb in slots do
+			local filled = i <= carry
+			paintSlot(crumb, filled, fill)
+			if filled and i > lastCarry then
+				Comic.punch(crumb:FindFirstChildOfClass("UIScale") :: UIScale, 1.6)
+			end
+		end
+	end
+	lastCarry = carry
+end
+
+-- Sacude las casillas: se usa cuando intentas morder con la carga llena.
+function Hud.shakeCarry()
+	for _, crumb in slots do
+		Comic.punch(crumb:FindFirstChildOfClass("UIScale") :: UIScale, 0.7)
+	end
+end
+
+function Hud.setBadge(visible: boolean)
+	badge.Visible = visible
+end
+
+-- Añade un botón a la columna izquierda, encima de Tienda. Lo usan los módulos opcionales
+-- (misiones, mascotas…). Devuelve cómo encender su aviso "!" y cómo esconderlo.
+function Hud.addSideButton(text: string, key: string?, color: Color3?, callback: () -> ())
+	extraButtons += 1
+	local holder, face = sideButton(sideColumn, 9 + extraButtons, color or Comic.Paper, text, nil, key)
+	local alert = alertBadge(holder)
+	face.MouseButton1Click:Connect(callback)
+	return {
+		holder = holder,
+		setBadge = function(visible: boolean)
+			alert.Visible = visible
+		end,
+		setVisible = function(visible: boolean)
+			holder.Visible = visible
+		end,
+	}
+end
+
+function Hud.showStore(visible: boolean)
+	storeHolder.Visible = visible
+end
+
+return Hud
