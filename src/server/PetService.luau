@@ -301,7 +301,8 @@ local function release(profile, id: number)
 	sync(profile)
 end
 
--- Tres iguales (especie, rareza y capa) se vuelven una de la rareza siguiente
+-- Tres de la misma especie y rareza se vuelven una de la rareza siguiente, con la capa más alta
+-- de las tres. De las otras dos se gastan primero las que no llevas puestas y las de capa más baja.
 local function fuse(profile, id: number)
 	local pets = petsOf(profile)
 	local entry = find(pets, id)
@@ -313,25 +314,30 @@ local function fuse(profile, id: number)
 		return
 	end
 	local kind = PetDefs.kind(entry)
-	local chosen = { entry }
-	-- Primero las que no están en el posadero
-	for pass = 1, 2 do
-		for _, other in pets.list do
-			if #chosen >= 3 then
-				break
-			end
-			local equippedNow = isEquipped(pets, other.id) ~= nil
-			if other ~= entry and PetDefs.kind(other) == kind and equippedNow == (pass == 2) then
-				table.insert(chosen, other)
-			end
+	local others = {}
+	for _, other in pets.list do
+		if other ~= entry and PetDefs.kind(other) == kind then
+			table.insert(others, other)
 		end
 	end
-	if #chosen < 3 then
-		fail(profile, "Hacen falta tres iguales: misma especie, rareza y capa")
+	table.sort(others, function(a, b)
+		local wornA, wornB = isEquipped(pets, a.id) ~= nil, isEquipped(pets, b.id) ~= nil
+		if wornA ~= wornB then
+			return not wornA
+		end
+		if a.l ~= b.l then
+			return a.l < b.l
+		end
+		return a.id < b.id
+	end)
+	if #others < 2 then
+		local missing = 2 - #others
+		fail(profile, "Hacen falta tres de la misma especie y rareza. Te falta" .. (if missing == 1 then " una" else "n dos"))
 		return
 	end
+	local chosen = { entry, others[1], others[2] }
 
-	local fused = { id = pets.next, s = entry.s, r = entry.r + 1, l = entry.l }
+	local fused = { id = pets.next, s = entry.s, r = entry.r + 1, l = math.max(entry.l, others[1].l, others[2].l) }
 	pets.next += 1
 
 	-- La nueva ocupa el primer hueco que dejan las fusionadas

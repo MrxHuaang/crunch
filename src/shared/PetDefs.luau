@@ -112,9 +112,10 @@ function PetDefs.totals(entries): { [string]: number }
 	return totals
 end
 
--- Mismo bicho a efectos de fusión: especie, rareza y capa
+-- Mismo bicho a efectos de fusión: especie y rareza. La capa del huevo no cuenta: exigirla
+-- dejaba el inventario lleno de bichos "casi iguales" que no se podían juntar, sin explicación.
 function PetDefs.kind(entry): string
-	return entry.s .. "|" .. entry.r .. "|" .. entry.l
+	return entry.s .. "|" .. entry.r
 end
 
 function PetDefs.roll(rng: Random): (string, number)

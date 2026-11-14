@@ -400,7 +400,8 @@ local function paintSheet()
 		fuseFace.BackgroundColor3 = DIM
 		fuseLabel.TextTransparency = 0.45
 	else
-		fuseLabel.Text = "Fusionar " .. math.min(count, 3) .. "/3"
+		-- Apagado dice qué falta: tres de la misma especie y rareza (la capa no importa)
+		fuseLabel.Text = if count >= 3 then "Fusionar 3" elseif count == 2 then "Falta 1 igual" else "Faltan 2 iguales"
 		fuseFace.BackgroundColor3 = if count >= 3 then Comic.Yellow else DIM
 		if count < 3 then
 			fuseLabel.TextTransparency = 0.45
