@@ -389,16 +389,66 @@ deflicker = function(model: Instance)
 	end
 end
 
+-- Los módulos Decor* se escribieron para un camino de media anchura DECOR_HALF (60): centro plano en
+-- |x| <= 50 y bandas laterales con lo alto. Para el camino ancho (Config.Map.Half) se construyen a su
+-- medida y luego se abren: lo de las bandas se desplaza entero hacia fuera (misma forma, pegado a los
+-- muros nuevos), lo del centro se reparte por el centro más ancho y lo que cruza el camino de lado a
+-- lado (manteles, arcos) se estira. Así la decoración sigue llenando la zona sin huecos pelados.
+local DECOR_HALF = 60
+local DECOR_CENTER = 50
+
+local function widenDecor(model: Instance)
+	local shift = MAP.Half - DECOR_HALF
+	if shift <= 0 then
+		return
+	end
+	local spread = (DECOR_CENTER + shift) / DECOR_CENTER
+	for _, item in model:GetDescendants() do
+		if not item:IsA("BasePart") then
+			continue
+		end
+		local cf, size = item.CFrame, item.Size
+		local rx, ry, rz = cf.RightVector, cf.UpVector, cf.LookVector
+		-- Media anchura en X del mundo
+		local hx = (math.abs(rx.X) * size.X + math.abs(ry.X) * size.Y + math.abs(rz.X) * size.Z) / 2
+		local x = cf.Position.X
+		if math.abs(x) < 10 and hx > DECOR_CENTER - 5 then
+			-- Cruza el camino: se estira por el eje que mira a X (si está alineado con él)
+			local k = (hx + shift) / hx
+			if math.abs(rx.X) > 0.98 then
+				item.Size = Vector3.new(size.X * k, size.Y, size.Z)
+			elseif math.abs(rz.X) > 0.98 then
+				item.Size = Vector3.new(size.X, size.Y, size.Z * k)
+			elseif math.abs(ry.X) > 0.98 then
+				item.Size = Vector3.new(size.X, size.Y * k, size.Z)
+			end
+		elseif math.abs(x) + hx <= DECOR_CENTER then
+			-- Detalle del centro: se reparte por el centro ancho (en |x| = 50 coincide con el desplazamiento)
+			item.CFrame = cf + Vector3.new(x * (spread - 1), 0, 0)
+		else
+			-- Banda lateral: entera hacia fuera
+			item.CFrame = cf + Vector3.new(math.sign(x) * shift, 0, 0)
+		end
+	end
+end
+
+-- Decor2 y Decor3 se adaptan solos a la media anchura que reciben (paredes en W + algo, suelos de 2W);
+-- Decor (Picnic, Jungla, Playa, Dulce, Espacio) está escrito para 60: se construye así y se abre.
 local function decorate(theme: string, parent: Instance, area)
 	for _, name in { "Decor3", "Decor2", "Decor" } do
 		local module = script.Parent:FindFirstChild(name)
 		if module then
 			local ok, lib = pcall(require, module)
 			if ok and type(lib) == "table" and (lib.Themes == nil or lib.Themes[theme]) then
+				local fixed = name == "Decor"
+				local target = if fixed then { x0 = -DECOR_HALF, x1 = DECOR_HALF, z0 = area.z0, z1 = area.z1 } else area
 				-- El suelo de la zona queda 0.08 por encima de GROUND; el decorado plano (manteles,
 				-- surcos, baldosas) se apoya un pelo más arriba para no parpadear contra él
-				local built, err = pcall(lib.build, theme, parent, area, GROUND + 0.1)
+				local built, err = pcall(lib.build, theme, parent, target, GROUND + 0.1)
 				if built then
+					if fixed then
+						widenDecor(parent)
+					end
 					return
 				end
 				warn(`[CRUNCH!] Decorado de {theme} falló:`, err)
@@ -538,7 +588,12 @@ local function buildZones()
 			shadow = false,
 		})
 		halftone(floor, zone.floor:Lerp(INK, 0.3), 0.9)
-		decorate(zone.theme, model, { x0 = -MAP.Half, x1 = MAP.Half, z0 = zone.z0, z1 = zone.z1 })
+		-- La decoración va en su propio modelo (para abrirla sin mover el suelo) y luego pasa el
+		-- deflicker con el suelo ya en su sitio
+		local decor = Instance.new("Model")
+		decor.Name = "Decor"
+		decorate(zone.theme, decor, { x0 = -MAP.Half, x1 = MAP.Half, z0 = zone.z0, z1 = zone.z1 })
+		decor.Parent = model
 		deflicker(model)
 		model.Parent = zones
 		buildGate(gates, zones, zone)

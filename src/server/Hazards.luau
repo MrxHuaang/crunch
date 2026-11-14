@@ -33,7 +33,7 @@ local STOMP_AIM = 0.6 -- probabilidad de apuntar cerca de un jugador
 local FLAT = Vector3.new(1, 0, 1)
 local GROUND = Config.GroundY
 local HALF = Config.Map.Half
-local FOOD_HALF = 48
+local FOOD_HALF = HALF - 14 -- donde salen los racimos (FoodService)
 
 local rng = Random.new()
 local remote: RemoteEvent
@@ -61,7 +61,7 @@ local function areaOf(zone)
 		inFar = far,
 		walkNear = near - GATE_GAP,
 		walkFar = far + GATE_GAP,
-		foodNear = zone.z0 - 14,
+		foodNear = zone.z0 - Config.FoodLayout.Margin,
 		foodFar = zone.z1 + 14,
 	}
 end
