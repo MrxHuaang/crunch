@@ -322,6 +322,98 @@ end
 local sideColumn: Frame
 local extraButtons = 0
 
+-- La columna lateral no puede crecer con cada sistema nuevo: los paneles se agrupan. Un grupo es un
+-- botón que despliega a su derecha los suyos; las teclas de cada panel siguen funcionando igual.
+local SIDE_GROUPS = {
+	Colonia = { order = 3, color = Color3.fromRGB(255, 176, 64) },
+	Estilo = { order = 4, color = Comic.Paper },
+}
+local SIDE_GROUP_OF = {
+	Castas = "Colonia",
+	["Órdenes"] = "Colonia",
+	Mascotas = "Colonia",
+	Vecinas = "Colonia",
+	Vestidor = "Estilo",
+	Memes = "Estilo",
+}
+local SIDE_ORDER = { Misiones = 2 } -- los sueltos que quieren un sitio fijo
+local sideGroups = {} -- [nombre] = { holder, tray, alert, items = { {holder, alert} } }
+
+local function closeGroups(except: any?)
+	for _, group in sideGroups do
+		if group ~= except then
+			group.tray.Visible = false
+		end
+	end
+end
+
+local function refreshGroup(group)
+	local anyVisible, anyAlert = false, false
+	for _, item in group.items do
+		if item.holder.Visible then
+			anyVisible = true
+			anyAlert = anyAlert or item.alert.Visible
+		end
+	end
+	group.holder.Visible = anyVisible
+	group.alert.Visible = anyAlert
+	if not anyVisible then
+		group.tray.Visible = false
+	end
+end
+
+local function sideGroup(name: string)
+	local group = sideGroups[name]
+	if group then
+		return group
+	end
+	local info = SIDE_GROUPS[name]
+	local holder, face = sideButton(sideColumn, info.order, info.color, name .. "  ›", nil, nil)
+	local tray = Comic.frame(holder)
+	tray.Name = "Tray"
+	tray.Position = UDim2.new(1, 12, 0, 0)
+	tray.AutomaticSize = Enum.AutomaticSize.XY
+	tray.Visible = false
+	tray.ZIndex = 6
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.Padding = UDim.new(0, 10)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = tray
+	group = { holder = holder, tray = tray, alert = alertBadge(holder), items = {} }
+	sideGroups[name] = group
+	face.MouseButton1Click:Connect(function()
+		closeGroups(group)
+		tray.Visible = not tray.Visible
+	end)
+	return group
+end
+
+-- Botón dentro de un grupo. Devuelve lo mismo que Hud.addSideButton.
+local function groupedButton(groupName: string, text: string, key: string?, color: Color3, callback: () -> ())
+	local group = sideGroup(groupName)
+	local holder, face = sideButton(group.tray, #group.items + 1, color, text, nil, key)
+	local alert = alertBadge(holder)
+	local item = { holder = holder, alert = alert }
+	table.insert(group.items, item)
+	face.MouseButton1Click:Connect(function()
+		closeGroups()
+		callback()
+	end)
+	refreshGroup(group)
+	return {
+		holder = holder,
+		setBadge = function(visible: boolean)
+			alert.Visible = visible
+			refreshGroup(group)
+		end,
+		setVisible = function(visible: boolean)
+			holder.Visible = visible
+			refreshGroup(group)
+		end,
+	}
+end
+
 local function buildSide()
 	-- Pegada al borde izquierdo. En escritorio, centrada en alto (bajo el chat de Roblox);
 	-- en móvil, arriba, para dejar libre la zona del joystick de abajo a la izquierda.
@@ -349,8 +441,7 @@ local function buildSide()
 	end)
 	badge = alertBadge(hillHolder) -- hay algo que excavar
 
-	local _, wardrobeFace = sideButton(column, 2, Comic.Paper, "Vestidor", nil, "V")
-	wardrobeFace.MouseButton1Click:Connect(function()
+	groupedButton("Estilo", "Vestidor", "V", Comic.Paper, function()
 		call(Hud.onWardrobe)
 	end)
 
@@ -358,7 +449,11 @@ local function buildSide()
 	storeHolder = holder
 	storeHolder.Visible = false
 	storeFace.MouseButton1Click:Connect(function()
+		closeGroups()
 		call(Hud.onStore)
+	end)
+	hillFace.MouseButton1Click:Connect(function()
+		closeGroups()
 	end)
 end
 
@@ -591,12 +686,99 @@ function Hud.dock(): Frame
 	return dock
 end
 
+-- Fila de etiquetas bajo la caja (capa · obreras · jalea), por si un módulo quiere poner algo junto a
+-- ellas (LayoutOrder: capa 1, obreras 2, jalea 3). Escala con la cabecera.
+function Hud.tagRow(): Frame?
+	return if workerTag then workerTag.Parent :: Frame else nil
+end
+
+-- Contador de Comida que rueda: al subir, la cifra corre hasta el valor nuevo (~0,6 s); al gastar
+-- salta de golpe. Justo después de una entrega (Hud.punchFood) cada cambio da un golpecito.
+local shownFood = 0
+local targetFood = 0
+local rolling = false
+local loudUntil = 0
+
 function Hud.setFood(value: number)
-	foodNumber.Text = Format.short(value)
+	targetFood = value
+	if value <= shownFood or shownFood <= 0 or not foodNumber then
+		shownFood = value
+		if foodNumber then
+			foodNumber.Text = Format.short(value)
+		end
+		return
+	end
+	if rolling then
+		return -- el bucle en marcha ya persigue el valor nuevo
+	end
+	rolling = true
+	task.spawn(function()
+		local RunService = game:GetService("RunService")
+		local lastText = foodNumber.Text
+		local lastTick = 0
+		local start = shownFood
+		while shownFood < targetFood do
+			local dt = RunService.RenderStepped:Wait()
+			local gap = targetFood - shownFood
+			-- Persigue el objetivo frenando al final; nunca tarda más de ~0,7 s
+			shownFood = math.min(targetFood, shownFood + math.max(gap * math.min(1, dt * 7), (targetFood - start) * dt * 1.5, 1))
+			local text = Format.short(math.floor(shownFood))
+			if text ~= lastText then
+				lastText = text
+				foodNumber.Text = text
+				local now = os.clock()
+				if now < loudUntil and now - lastTick > 0.05 then
+					lastTick = now
+					local progress = math.clamp((shownFood - start) / math.max(targetFood - start, 1), 0, 1)
+					Comic.punch(foodPunch, math.max(foodPunch.Scale, 1.1))
+					Sfx.tick(1.3 + 0.7 * progress)
+				end
+			end
+		end
+		foodNumber.Text = Format.short(targetFood)
+		rolling = false
+	end)
 end
 
 function Hud.punchFood()
+	loudUntil = os.clock() + 1
 	Comic.punch(foodPunch, 1.35)
+end
+
+-- Toda la fila de la carga late (al entrar un trozo, más fuerte si llena)
+local function pulseRow(strength: number)
+	if not slotRow then
+		return
+	end
+	local scale = slotRow:FindFirstChild("Pulse") :: UIScale?
+	if not scale then
+		local created = Instance.new("UIScale")
+		created.Name = "Pulse"
+		created.Parent = slotRow
+		scale = created
+	end
+	Comic.punch(scale :: UIScale, strength)
+end
+
+-- La carga se acaba de llenar: ola de rebotes por las casillas y la fila entera late.
+function Hud.carryFull()
+	pulseRow(1.25)
+	for i, crumb in slots do
+		task.delay((i - 1) * 0.03, function()
+			local s = crumb.Parent and crumb:FindFirstChildOfClass("UIScale")
+			if s then
+				Comic.punch(s, 1.7)
+			end
+		end)
+	end
+	if countLabel then
+		countLabel.TextColor3 = Comic.Yellow
+		task.delay(0.6, function()
+			if countLabel then
+				countLabel.TextColor3 = Comic.Paper
+			end
+		end)
+	end
 end
 
 function Hud.setTags(jelly: number, rebirths: number, workers: number, cap: number)
@@ -662,6 +844,9 @@ function Hud.setCarry(carry: number, capacity: number, color: Color3?)
 		rebuildSlots(capacity)
 		lastCarry = 0
 	end
+	if carry > lastCarry and lastCarry >= 0 then
+		pulseRow(1.08)
+	end
 	local fill = color or Comic.Crumb
 
 	if countLabel then
@@ -696,10 +881,17 @@ end
 -- Añade un botón a la columna izquierda, encima de Tienda. Lo usan los módulos opcionales
 -- (misiones, mascotas…). Devuelve cómo encender su aviso "!" y cómo esconderlo.
 function Hud.addSideButton(text: string, key: string?, color: Color3?, callback: () -> ())
+	local groupName = SIDE_GROUP_OF[text]
+	if groupName then
+		return groupedButton(groupName, text, key, color or Comic.Paper, callback)
+	end
 	extraButtons += 1
-	local holder, face = sideButton(sideColumn, 9 + extraButtons, color or Comic.Paper, text, nil, key)
+	local holder, face = sideButton(sideColumn, SIDE_ORDER[text] or (9 + extraButtons), color or Comic.Paper, text, nil, key)
 	local alert = alertBadge(holder)
-	face.MouseButton1Click:Connect(callback)
+	face.MouseButton1Click:Connect(function()
+		closeGroups()
+		callback()
+	end)
 	return {
 		holder = holder,
 		setBadge = function(visible: boolean)
