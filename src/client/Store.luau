@@ -543,6 +543,17 @@ local function drawObject(parent: Instance, def, size: number): Frame
 	return box
 end
 
+-- Las piezas del dibujo nacen con ZIndex 1: se igualan al del cuadro para que nunca queden
+-- debajo del fondo del puesto o del papel de la ficha (pase lo que pase con ZIndexBehavior).
+local function lift(box: GuiObject, z: number)
+	box.ZIndex = z
+	for _, piece in box:GetDescendants() do
+		if piece:IsA("GuiObject") then
+			piece.ZIndex = z
+		end
+	end
+end
+
 -------------------------------------------------------------------------------
 -- Tus números: qué hace cada cosa en tu partida
 -------------------------------------------------------------------------------
@@ -917,7 +928,7 @@ local function buildItem(entry, x: number, y: number, slot: number, rowH: number
 	local object = drawObject(holder, entry.def, objSize)
 	object.AnchorPoint = Vector2.new(0.5, 0)
 	object.Position = UDim2.fromOffset(cx, 8)
-	object.ZIndex = 3
+	lift(object, 3)
 	object.Rotation = ({ -3, 2, -1, 3 })[(index - 1) % 4 + 1]
 
 	-- Rótulo en el canto del estante
@@ -963,15 +974,21 @@ local function buildItem(entry, x: number, y: number, slot: number, rowH: number
 	ring.Color = OWNED
 	ring.LineJoinMode = Enum.LineJoinMode.Round
 
+	-- Lo que aún no tiene id de Roblox (solo se ve en Studio) lleva un cartelito claro
 	if idOf(entry) <= 0 then
-		local note = Comic.label(holder, "sin id", Comic.Body, 12, Comic.Red)
+		local note = Comic.label(holder, "Próximamente", Comic.Body, 13, Comic.Red)
 		note.AnchorPoint = Vector2.new(0, 0)
-		at(note, 4, 4, 44, 15)
+		at(note, 4, 4, 0, 18)
+		note.AutomaticSize = Enum.AutomaticSize.X
 		note.BackgroundTransparency = 0
 		note.BackgroundColor3 = Comic.Paper
 		note.Rotation = -4
 		note.ZIndex = 8
 		Comic.ink(note, 2, true)
+		local notePad = Instance.new("UIPadding")
+		notePad.PaddingLeft = UDim.new(0, 5)
+		notePad.PaddingRight = UDim.new(0, 5)
+		notePad.Parent = note
 	end
 
 	local base = button(holder)
@@ -1070,6 +1087,7 @@ local function paintSheet()
 		local object = drawObject(p.drawing, item.def, 132)
 		object.AnchorPoint = Vector2.new(0.5, 0.5)
 		object.Position = UDim2.fromScale(0.5, 0.5)
+		lift(object, 24)
 		p.body.CanvasPosition = Vector2.zero
 	end
 	p.name.Text = item.def.name
@@ -1128,7 +1146,7 @@ local function paintSheet()
 		label.TextTransparency = 0.25
 	elseif id <= 0 then
 		face.BackgroundColor3 = DIM
-		label.Text = "Sin id (solo en Studio)"
+		label.Text = "Próximamente"
 		label.TextTransparency = 0.3
 	else
 		face.BackgroundColor3 = Comic.Yellow
@@ -1628,6 +1646,9 @@ function Store.start()
 	gui.ResetOnSpawn = false
 	gui.DisplayOrder = 21
 	gui.Enabled = false
+	-- Instance.new deja ZIndexBehavior en Global: los dibujos (ZIndex 1) quedaban debajo de la
+	-- pared del puesto (ZIndex 3). Todo el puesto está pensado por capas de padre a hijo.
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	gui.Parent = player:WaitForChild("PlayerGui")
 
 	local dim = button(gui)
@@ -1640,6 +1661,7 @@ function Store.start()
 	end)
 
 	panel = Comic.frame(gui)
+	panel.ZIndex = 2 -- siempre sobre el velo oscuro
 	panel.AnchorPoint = Vector2.new(0.5, 0.5)
 	panel.Position = UDim2.fromScale(0.5, 0.5)
 	panel.Size = UDim2.fromOffset(TOTAL_W, H)

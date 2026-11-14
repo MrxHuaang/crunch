@@ -28,6 +28,7 @@ local Hud = require(script.Parent.Hud)
 local Sfx = require(script.Parent.Sfx)
 local State = require(script.Parent.State)
 local Store = require(script.Parent.Store)
+local ViewFit = require(script.Parent.ViewFit)
 
 local Wardrobe = {}
 
@@ -90,7 +91,7 @@ local camera: Camera
 local viewport: ViewportFrame
 local stand: { BasePart } = {}
 local center = Vector3.zero
-local distance = 9
+local fitState = {} -- encuadre de la cámara (ViewFit): se mide la caja real de la hormiga vestida
 local angle = 0.6
 local dragging: InputObject? = nil
 local dragX = 0
@@ -200,8 +201,8 @@ local function framePreview()
 		return
 	end
 	local cf, size = model:GetBoundingBox()
-	center = cf.Position + Vector3.new(0, size.Y * 0.08, 0)
-	distance = math.clamp(math.max(size.X, size.Y, size.Z) * 1.9, 6, 15)
+	center = cf.Position
+	ViewFit.reset(fitState) -- ropa nueva: se vuelve a medir y la cámara se coloca de golpe
 	local width = math.max(size.X, size.Z) * 0.95 + 0.6
 	local floor = cf.Position.Y - size.Y / 2
 	local up = CFrame.Angles(0, 0, math.rad(90))
@@ -277,8 +278,11 @@ local function spin(dt: number)
 	if not dragging and os.clock() - lastDrag > 2.5 then
 		angle += dt * 0.35
 	end
-	local eye = center + Vector3.new(math.sin(angle) * distance, distance * 0.3, math.cos(angle) * distance)
-	camera.CFrame = CFrame.lookAt(eye, center)
+	-- Antes: distancia fija según el lado mayor (tope 15) y sin contar la proporción del marco, así
+	-- que la hormiga se salía por los lados. Ahora cabe entera, peana incluida (0,9 por debajo).
+	if preview then
+		ViewFit.orbit(camera, viewport, preview, angle, fitState, 0.9)
+	end
 end
 
 -------------------------------------------------------------------------------

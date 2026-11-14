@@ -263,7 +263,12 @@ local function buildBottom()
 	hintHolder = holder
 end
 
+local sideKeys: { [string]: boolean } = {} -- teclas de los paneles de la columna (nombre de KeyCode)
+
 local function sideButton(parent: Instance, order: number, color: Color3, text: string, icon: string?, key: string?): (Frame, TextButton, TextLabel)
+	if key then
+		sideKeys[key] = true
+	end
 	local holder, face = Comic.button(parent, UDim2.fromOffset(SIDE_W, SIDE_H), color, 4)
 	holder.LayoutOrder = order
 	holder.Rotation = if order % 2 == 0 then -1 else 1
@@ -345,6 +350,36 @@ local function closeGroups(except: any?)
 			group.tray.Visible = false
 		end
 	end
+end
+
+-- Cierra las bandejas abiertas de "Colonia ›" / "Estilo ›" (p. ej. al abrir un panel por su tecla)
+function Hud.closeGroups()
+	closeGroups()
+end
+
+local function inside(object: GuiObject, point: Vector2): boolean
+	local at, size = object.AbsolutePosition, object.AbsoluteSize
+	return point.X >= at.X and point.X <= at.X + size.X and point.Y >= at.Y and point.Y <= at.Y + size.Y
+end
+
+-- Toque o clic fuera de la bandeja (y de su botón de grupo, que ya la abre y cierra): se cierra.
+-- La tecla de cualquier panel de la columna (o Esc) también la cierra.
+local function watchGroups()
+	UserInputService.InputBegan:Connect(function(input, processed)
+		local kind = input.UserInputType
+		if kind == Enum.UserInputType.MouseButton1 or kind == Enum.UserInputType.Touch then
+			local point = Vector2.new(input.Position.X, input.Position.Y)
+			for _, group in sideGroups do
+				if group.tray.Visible and not inside(group.tray, point) and not inside(group.holder, point) then
+					group.tray.Visible = false
+				end
+			end
+		elseif kind == Enum.UserInputType.Keyboard then
+			if input.KeyCode == Enum.KeyCode.Escape or (not processed and sideKeys[input.KeyCode.Name]) then
+				closeGroups()
+			end
+		end
+	end)
 end
 
 local function refreshGroup(group)
@@ -674,6 +709,7 @@ function Hud.start(): ScreenGui
 	buildTop()
 	buildBottom()
 	buildSide()
+	watchGroups()
 	buildMute()
 	showHint(false)
 	task.spawn(tickTimers)

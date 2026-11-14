@@ -39,14 +39,24 @@ for _, def in O.List do
 end
 
 -- Medidas del panel (diseño a ~1000 px de alto; Hud.fitScale lo adapta)
-local W, H = 520, 392
+-- Letra mínima de 17 de diseño: a 864 px de alto (escala 0,86) sale a ~15 px reales
+local W, H = 680, 534
 local ANTS = 20 -- hormiguitas de la fila de arriba: cada una, un 5 %
-local ANT_W = 22
+local ANT_W = 26
 local STRIP_X = (W - ANTS * ANT_W) / 2
-local STRIP_Y = 78
-local COL_W, COL_GAP, COL_Y = 160, 10, 124
-local FAN_R = 58
-local TOKEN = 30
+local STRIP_Y = 84
+local COL_W, COL_GAP, COL_Y, COL_H = 213, 10, 128, 350
+local FAN_R = 72
+local TOKEN = 36
+local TEXT = 17 -- tamaño mínimo de los textos de lectura
+-- Sin nada elegido la colonia hace lo de siempre (Colony: lo más grande del jardín y tus rastros).
+-- Se enseña como una orden más, "Como siempre", para que lo que se ve sea lo que pasa.
+local DEFAULT_ID = "default"
+local DEFAULT_DEF = {
+	id = DEFAULT_ID,
+	name = "Como siempre",
+	desc = "Van a la comida más grande del jardín (y a tus rastros, si marcas). Elige una orden para mandar tú.",
+}
 
 local TABLE_WOOD = Color3.fromRGB(122, 84, 56)
 local MAP = Color3.fromRGB(246, 236, 210)
@@ -157,6 +167,14 @@ local function picto(parent: Instance, id: string, size: number, opts: any?): Fr
 		bit(canvas, 13, 14, 6, 6, c(Comic.DirtDark), 99)
 		bit(canvas, 22, 22, 4, 4, ink, 99)
 		bit(canvas, 25.5, 23, 3.5, 3.5, ink, 99)
+	elseif id == DEFAULT_ID then
+		-- Como siempre: la comida grande del jardín sobre la hierba
+		bit(canvas, 1, 23, 28, 5, c(Comic.Green), 2, 1.2)
+		bit(canvas, 5, 5, 20, 20, c(Comic.Crumb), 99, 1.5)
+		bit(canvas, 10, 10, 4, 4, c(Comic.DirtDark), 99)
+		bit(canvas, 16, 15, 5, 5, c(Comic.DirtDark), 99)
+		local leaf = bit(canvas, 20, 1, 8, 5, c(Comic.Green), 99, 1.2)
+		leaf.Rotation = -30
 	elseif id == "zone" then
 		-- Mapa con chincheta
 		local map = bit(canvas, 3, 7, 23, 18, c(MAP), 2, 1.5)
@@ -173,6 +191,15 @@ local function picto(parent: Instance, id: string, size: number, opts: any?): Fr
 			if child:IsA("Frame") then
 				child.BackgroundTransparency = 0.55
 			end
+		end
+	end
+	-- Las piezas nacen con ZIndex 1: con ZIndexBehavior Global quedaban debajo de la ficha que las
+	-- contiene (círculos blancos sin dibujo). Heredan el ZIndex del padre, en su mismo orden.
+	local z = if parent:IsA("GuiObject") then parent.ZIndex else 1
+	canvas.ZIndex = z
+	for _, child in canvas:GetDescendants() do
+		if child:IsA("GuiObject") then
+			child.ZIndex = z
 		end
 	end
 	return canvas
@@ -219,6 +246,31 @@ local function squads(): { any }
 	return (snap and snap.squads) or { { order = "near", share = 100, zone = 1 } }
 end
 
+-- La orden que de verdad sigue un escuadrón: sin nada guardado (snap.default) la colonia hace lo de
+-- siempre, aunque el servidor rellene la lista con "near"
+local function shownOrder(k: number): string?
+	local squad = squads()[k]
+	if not squad then
+		return nil
+	end
+	if k == 1 and (snap == nil or snap.default) then
+		return DEFAULT_ID
+	end
+	return squad.order
+end
+
+-- Siguiente orden. Desde "Como siempre" la siguiente es la primera de la lista (el servidor, sin
+-- nada guardado, pasaría de "near" a la segunda)
+local function cycle(k: number)
+	if shownOrder(k) == DEFAULT_ID then
+		if unlocked(O.List[1].id) and remote then
+			remote:FireServer("Set", k, O.List[1].id)
+		end
+	elseif remote then
+		remote:FireServer("Cycle", k)
+	end
+end
+
 local function shares(): { number }
 	if dragShares then
 		return dragShares
@@ -248,17 +300,25 @@ end
 
 local function antGlyph(parent: Instance, x: number): { Frame }
 	local holder = Comic.frame(parent)
-	at(holder, x, 0, ANT_W, 20)
+	at(holder, x + (ANT_W - 22) / 2, 0, 22, 20)
+	-- Mismo ZIndex que la fila: con ZIndex 1 se quedaban debajo del fondo de papel (barra blanca)
+	local z = if parent:IsA("GuiObject") then parent.ZIndex else 1
+	holder.ZIndex = z
 	-- Patitas primero, para que queden debajo del cuerpo
 	for i = 0, 2 do
 		local leg = bit(holder, 8 + i * 2.4, 4, 1, 12, Comic.Ink)
 		leg.Rotation = -20 + i * 20
+		leg.ZIndex = z
 	end
-	return {
+	local parts = {
 		bit(holder, 1, 6, 9, 8, Comic.Ink, 99, 1.2), -- abdomen
 		bit(holder, 9, 7.5, 5, 5, Comic.Ink, 99, 1.2), -- tórax
 		bit(holder, 13, 6, 7, 7, Comic.Ink, 99, 1.2), -- cabeza
 	}
+	for _, part in parts do
+		part.ZIndex = z
+	end
+	return parts
 end
 
 local function paintStrip()
@@ -295,7 +355,7 @@ local function paintStrip()
 		if i <= count then
 			label.Visible = true
 			local center = (startCum + list[i] / 2) / 100 * ANTS * ANT_W
-			label.Position = UDim2.fromOffset(STRIP_X + center - 30, STRIP_Y - 26)
+			label.Position = UDim2.fromOffset(STRIP_X + center - 35, STRIP_Y - 28)
 			label.Text = list[i] .. " %"
 			label.TextColor3 = squadColor(i)
 			startCum += list[i]
@@ -347,8 +407,8 @@ local function buildStrip(face: Frame)
 		stripAnts[i] = antGlyph(row, (i - 1) * ANT_W)
 	end
 	for i = 1, 3 do
-		local label = Comic.label(face, "", Comic.Display, 18, Comic.Paper)
-		label.Size = UDim2.fromOffset(60, 20)
+		local label = Comic.label(face, "", Comic.Display, 21, Comic.Paper)
+		label.Size = UDim2.fromOffset(70, 22)
 		label.ZIndex = 4
 		Comic.ink(label, 2)
 		shareLabels[i] = label
@@ -446,7 +506,15 @@ local function paintInfo(col)
 	if not squad then
 		return
 	end
-	local id = hovered[k] or squad.order
+	local id = hovered[k] or shownOrder(k) or squad.order
+	if id == DEFAULT_ID then
+		col.name.Text = DEFAULT_DEF.name
+		col.name.TextColor3 = Comic.Ink
+		col.zoneRow.Visible = false
+		col.desc.Text = if snap and snap.marked then "Ahora siguen tus rastros (F). " .. DEFAULT_DEF.desc else DEFAULT_DEF.desc
+		col.estimate.Text = ""
+		return
+	end
 	local def = ORDER_BY_ID[id] or O.List[1]
 	local locked = not unlocked(def.id)
 	col.name.Text = def.name
@@ -495,10 +563,11 @@ local function paintColumn(col)
 	end
 	col.title.Text = O.Squads[k].name
 	col.remove.Visible = k > 1 and k == count
+	local current = shownOrder(k) or squad.order
 	for id, token in col.tokens do
 		local def = ORDER_BY_ID[id]
 		local open = unlocked(id)
-		local chosen = squad.order == id
+		local chosen = current == id
 		token.face.BackgroundColor3 = if chosen then Comic.Yellow elseif open then Comic.Paper else Comic.DirtLight
 		token.scale.Scale = if chosen then 1.18 else 1
 		token.lockTag.Visible = not open
@@ -509,15 +578,15 @@ local function paintColumn(col)
 			if token.art then
 				token.art:Destroy()
 			end
-			token.art = picto(token.face, id, 24, { silhouette = not open, bg = Comic.Paper })
+			token.art = picto(token.face, id, 30, { silhouette = not open, bg = Comic.Paper })
 		end
 	end
-	if col.centerId ~= squad.order then
-		col.centerId = squad.order
+	if col.centerId ~= current then
+		col.centerId = current
 		if col.centerArt then
 			col.centerArt:Destroy()
 		end
-		col.centerArt = picto(col.center, squad.order, 40, { bg = Comic.Yellow })
+		col.centerArt = picto(col.center, current, 50, { bg = Comic.Yellow })
 		Comic.punch(col.centerPunch, 1.3)
 	end
 	col.cloth.BackgroundColor3 = squadColor(k)
@@ -530,15 +599,16 @@ local function buildColumn(face: Frame, k: number)
 
 	-- Escuadrón formado
 	local live = Comic.frame(face)
-	at(live, x, COL_Y, COL_W, 236)
+	at(live, x, COL_Y, COL_W, COL_H)
 	live.ZIndex = 2
 	col.live = live
-	local backing = bit(live, 0, 0, COL_W, 236, MAP, 12, 3)
+	local backing = bit(live, 0, 0, COL_W, COL_H, MAP, 12, 3)
 	backing.BackgroundTransparency = 0.08
+	backing.ZIndex = 0 -- siempre debajo de todo lo de la columna
 	local _, cloth = flagGui(live, k)
 	col.cloth = cloth
-	col.title = Comic.label(live, "", Comic.Display, 20, Comic.Ink)
-	at(col.title, 48, 6, COL_W - 80, 22)
+	col.title = Comic.label(live, "", Comic.Display, 22, Comic.Ink)
+	at(col.title, 48, 6, COL_W - 84, 24)
 	col.title.TextXAlignment = Enum.TextXAlignment.Left
 
 	-- Quitar el último escuadrón: sus obreras vuelven al primero
@@ -555,8 +625,8 @@ local function buildColumn(face: Frame, k: number)
 	col.remove = removeHolder
 
 	-- Centro del abanico: la orden elegida, grande y encendida
-	local cx, cy = COL_W / 2, 122
-	local center = bit(live, cx - 27, cy - 27, 54, 54, Comic.Yellow, 99, 3)
+	local cx, cy = COL_W / 2, 128
+	local center = bit(live, cx - 32, cy - 32, 64, 64, Comic.Yellow, 99, 3)
 	center.ZIndex = 3
 	col.center = center
 	col.centerPunch = Instance.new("UIScale")
@@ -578,10 +648,10 @@ local function buildColumn(face: Frame, k: number)
 		Comic.round(holder:FindFirstChild("Shadow") :: Frame)
 		local scale = Instance.new("UIScale")
 		scale.Parent = holder
-		local lockTag = Comic.label(holder, "", Comic.Display, 12, Comic.Paper)
+		local lockTag = Comic.label(holder, "", Comic.Display, TEXT, Comic.Paper)
 		lockTag.AnchorPoint = Vector2.new(0.5, 0)
-		lockTag.Position = UDim2.new(0.5, 0, 1, -2)
-		lockTag.Size = UDim2.fromOffset(30, 12)
+		lockTag.Position = UDim2.new(0.5, 0, 1, -4)
+		lockTag.Size = UDim2.fromOffset(40, 18)
 		lockTag.ZIndex = 6
 		Comic.ink(lockTag, 1.5)
 		local newDot = bit(holder, TOKEN - 8, -3, 10, 10, Comic.Red, 99, 1.5)
@@ -616,33 +686,30 @@ local function buildColumn(face: Frame, k: number)
 	end
 
 	-- Línea de explicación
-	col.name = Comic.label(live, "", Comic.Display, 19, Comic.Ink)
-	at(col.name, 8, 170, COL_W - 16, 20)
-	col.desc = Comic.label(live, "", Comic.Body, 12, Comic.Ink)
-	at(col.desc, 8, 190, COL_W - 16, 30)
+	col.name = Comic.label(live, "", Comic.Display, 23, Comic.Ink)
+	at(col.name, 8, 194, COL_W - 16, 26)
+	-- Descripción a tamaño fijo legible: la caja tiene sitio para cinco líneas
+	col.desc = Comic.label(live, "", Comic.Body, TEXT, Comic.Ink)
+	at(col.desc, 8, 222, COL_W - 16, 100)
 	col.desc.TextWrapped = true
 	col.desc.TextYAlignment = Enum.TextYAlignment.Top
-	col.desc.TextScaled = true -- los textos largos encogen antes que salirse
-	local descLimit = Instance.new("UITextSizeConstraint")
-	descLimit.MaxTextSize = 12
-	descLimit.MinTextSize = 8
-	descLimit.Parent = col.desc
-	col.estimate = Comic.label(live, "", Comic.Display, 17, Comic.Red)
-	at(col.estimate, 8, 216, COL_W - 16, 18)
+	col.estimate = Comic.label(live, "", Comic.Display, 20, Comic.Red)
+	at(col.estimate, 8, 322, COL_W - 16, 22)
 	col.estimate.TextXAlignment = Enum.TextXAlignment.Right
 
 	-- Zona elegida: ◀ zona ▶
 	local zoneRow = Comic.frame(live)
-	at(zoneRow, 8, 190, COL_W - 16, 26)
+	at(zoneRow, 8, 224, COL_W - 16, 32)
 	zoneRow.Visible = false
 	col.zoneRow = zoneRow
-	col.zoneLabel = Comic.label(zoneRow, "", Comic.Body, 13, Comic.Ink)
-	at(col.zoneLabel, 26, 0, COL_W - 68, 26)
+	col.zoneLabel = Comic.label(zoneRow, "", Comic.Body, TEXT, Comic.Ink)
+	at(col.zoneLabel, 32, 0, COL_W - 80, 32)
+	col.zoneLabel.TextWrapped = true
 	for side, dir in { [-1] = "◀", [1] = "▶" } do
-		local holder, arrow = Comic.button(zoneRow, UDim2.fromOffset(22, 22), Comic.Paper, 2)
-		holder.Position = UDim2.fromOffset(if side < 0 then 0 else COL_W - 40, 1)
+		local holder, arrow = Comic.button(zoneRow, UDim2.fromOffset(28, 28), Comic.Paper, 2)
+		holder.Position = UDim2.fromOffset(if side < 0 then 0 else COL_W - 46, 2)
 		Comic.round(arrow, 6)
-		local glyph = Comic.label(arrow, dir, Comic.Body, 13, Comic.Ink)
+		local glyph = Comic.label(arrow, dir, Comic.Body, TEXT, Comic.Ink)
 		glyph.Size = UDim2.fromScale(1, 1)
 		arrow.MouseButton1Click:Connect(function()
 			local squad = squads()[k]
@@ -658,7 +725,7 @@ local function buildColumn(face: Frame, k: number)
 
 	-- Tarjeta fantasma: escuadrón por formar
 	local ghost = Comic.frame(face)
-	at(ghost, x, COL_Y, COL_W, 236)
+	at(ghost, x, COL_Y, COL_W, COL_H)
 	ghost.ZIndex = 2
 	col.ghost = ghost
 	local ghostFace = Instance.new("TextButton")
@@ -672,13 +739,13 @@ local function buildColumn(face: Frame, k: number)
 	local dashed = Comic.ink(ghostFace, 2.5, true)
 	dashed.Transparency = 0.35
 	col.ghostFace = ghostFace
-	col.ghostTitle = Comic.label(ghostFace, "", Comic.Display, 22, Comic.Ink)
-	at(col.ghostTitle, 8, 88, COL_W - 16, 26)
-	col.ghostNote = Comic.label(ghostFace, "", Comic.Body, 13, Comic.Ink)
-	at(col.ghostNote, 12, 116, COL_W - 24, 36)
+	col.ghostTitle = Comic.label(ghostFace, "", Comic.Display, 24, Comic.Ink)
+	at(col.ghostTitle, 8, 140, COL_W - 16, 28)
+	col.ghostNote = Comic.label(ghostFace, "", Comic.Body, TEXT, Comic.Ink)
+	at(col.ghostNote, 12, 172, COL_W - 24, 60)
 	col.ghostNote.TextWrapped = true
 	local ghostFlag = flagGui(ghostFace, k)
-	ghostFlag.Position = UDim2.fromOffset(COL_W / 2 - 20, 40)
+	ghostFlag.Position = UDim2.fromOffset(COL_W / 2 - 20, 90)
 	for _, child in ghostFlag:GetDescendants() do
 		if child:IsA("Frame") then
 			child.BackgroundTransparency = 0.5
@@ -733,6 +800,9 @@ local function build()
 	gui.ResetOnSpawn = false
 	gui.DisplayOrder = 22
 	gui.Enabled = false
+	-- Instance.new deja ZIndexBehavior en Global: las piezas de los dibujos (ZIndex 1) quedaban bajo
+	-- sus fondos. El panel está pensado por capas de padre a hijo.
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	gui.Parent = player:WaitForChild("PlayerGui")
 
 	-- Al borde derecho, a media altura: el centro de la pantalla es de la hormiga
@@ -749,6 +819,7 @@ local function build()
 	-- Vetas de la mesa
 	local grain = Comic.halftone(face, Comic.DirtDark, 90)
 	grain.ImageTransparency = 0.5
+	grain.ZIndex = 0
 
 	-- Rótulo de papel con chincheta
 	local strip = Comic.frame(face, Comic.Paper)
@@ -781,13 +852,10 @@ local function build()
 		buildColumn(face, k)
 	end
 
-	footer = Comic.label(face, "", Comic.Body, 13, Comic.Paper)
-	at(footer, 14, H - 30, W - 28, 22)
+	footer = Comic.label(face, "", Comic.Body, TEXT, Comic.Paper)
+	at(footer, 14, H - 50, W - 28, 44)
 	footer.TextXAlignment = Enum.TextXAlignment.Left
-	footer.TextScaled = true
-	local limit = Instance.new("UITextSizeConstraint")
-	limit.MaxTextSize = 14
-	limit.Parent = footer
+	footer.TextWrapped = true -- hasta dos líneas antes que encoger la letra
 	Comic.ink(footer, 1.5)
 end
 
@@ -831,7 +899,7 @@ local function buildChips()
 		chips[k] = { button = button, scale = scale, id = nil, art = nil }
 		button.MouseButton1Click:Connect(function()
 			selected = k
-			send("Cycle", k)
+			cycle(k)
 			Comic.punch(scale, 1.3)
 		end)
 	end
@@ -845,13 +913,14 @@ local function paintChips()
 	chipRow.Visible = unlocked("near")
 	for k, chip in chips do
 		local squad = list[k]
+		local current = shownOrder(k)
 		chip.button.Visible = squad ~= nil
-		if squad and chip.id ~= squad.order then
-			chip.id = squad.order
+		if squad and current and chip.id ~= current then
+			chip.id = current
 			if chip.art then
 				chip.art:Destroy()
 			end
-			chip.art = picto(chip.button, squad.order, 20, { bg = Comic.Paper })
+			chip.art = picto(chip.button, current, 20, { bg = Comic.Paper })
 			Comic.punch(chip.scale, 1.35)
 		end
 	end
@@ -1093,7 +1162,7 @@ function Orders.start(remotes: Folder)
 			local shift = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
 			if shift then
 				if unlocked("near") then
-					send("Cycle", selected)
+					cycle(selected)
 				end
 			else
 				Orders.toggle()

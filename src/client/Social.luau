@@ -1795,6 +1795,10 @@ function Social.refreshPanel()
 	paintPeace()
 end
 
+function Social.isOpen(): boolean
+	return panel.open == true
+end
+
 function Social.toggle()
 	if not panel.gui then
 		return

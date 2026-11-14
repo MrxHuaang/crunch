@@ -92,8 +92,36 @@ local function rootPart(): BasePart?
 	return if part and part:IsA("BasePart") then part else nil
 end
 
+-- Paneles opcionales: se miran solo si el módulo existe y expone isOpen (con pcall: uno roto no
+-- deja a la hormiga sin morder)
+local OPTIONAL_PANELS = { "CasteClient", "Orders", "Social", "Emotes" } -- Castas, Órdenes, Vecinas, álbum de memes
+local optionalPanels: { any } = {}
+for _, name in OPTIONAL_PANELS do
+	local module = script:FindFirstChild(name)
+	if module then
+		local ok, lib = pcall(require, module)
+		if ok and type(lib) == "table" and type(lib.isOpen) == "function" then
+			table.insert(optionalPanels, lib)
+		end
+	end
+end
+
 local function panelOpen(): boolean
-	return Tree.isOpen() or Store.isOpen() or Wardrobe.isOpen()
+	if Tree.isOpen() or Store.isOpen() or Wardrobe.isOpen() then
+		return true
+	end
+	-- Mapa del túnel
+	local okTunnel, tunnelOpen = pcall(Tunnel.isOpen)
+	if okTunnel and tunnelOpen then
+		return true
+	end
+	for _, lib in optionalPanels do
+		local ok, open = pcall(lib.isOpen)
+		if ok and open then
+			return true
+		end
+	end
+	return false
 end
 
 local function nothingBought(): boolean

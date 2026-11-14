@@ -1488,13 +1488,19 @@ local wheel = {
 	touch = nil :: InputObject?,
 	touchStart = Vector2.zero,
 	openedAt = 0,
+	frames = 0, -- fotogramas desde que se abrió (un tirón al abrir no convierte un toque en "mantener")
+	centerAt = nil :: Vector2?, -- dónde se colocó al abrir (AbsolutePosition aún no está al día)
+	openPointer = Vector2.zero, -- ratón al abrir: hasta que no se mueve, no se señala nada
 }
 local albumToggle: () -> () = function() end
 
 local function wheelCenter(): (Vector2, number)
 	local root = wheel.root :: Frame
 	local scale = root.AbsoluteSize.X / SIZE
-	return root.AbsolutePosition + root.AbsoluteSize / 2, if scale > 0 then scale else 1
+	-- El fotograma en que se abre, AbsolutePosition aún es la de la vez anterior: con ella el ratón
+	-- "señalaba" un hueco al azar y un toque rápido lanzaba un meme en vez de abrir el álbum
+	local center = wheel.centerAt or (root.AbsolutePosition + root.AbsoluteSize / 2)
+	return center, if scale > 0 then scale else 1
 end
 
 local function paintWheel()
@@ -1598,6 +1604,9 @@ local function openWheel(center: Vector2, mode: string)
 	local x = math.clamp(center.X, math.min(half, view.X / 2), math.max(view.X - half, view.X / 2))
 	local y = math.clamp(center.Y, math.min(half, view.Y / 2), math.max(view.Y - half, view.Y / 2))
 	wheel.root.Position = UDim2.fromOffset(x, y)
+	wheel.centerAt = Vector2.new(x, y)
+	wheel.frames = 0
+	wheel.openPointer = UserInputService:GetMouseLocation()
 	if wheel.pop then
 		wheel.pop.Scale = 0.6
 		TweenService:Create(wheel.pop, TweenInfo.new(0.16, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
@@ -1617,6 +1626,7 @@ local function updateWheel()
 	if not wheel.open or not wheel.root then
 		return
 	end
+	wheel.frames += 1
 	local center, scale = wheelCenter()
 	local pointer: Vector2
 	local delta: Vector2
@@ -1631,6 +1641,12 @@ local function updateWheel()
 	else
 		pointer = UserInputService:GetMouseLocation()
 		delta = (pointer - center) / scale
+		-- Manteniendo Y: si el ratón no se ha movido desde que abrió, no se señala nada (junto a un
+		-- borde la rueda se recoloca y el ratón quedaba ya encima de un hueco)
+		if wheel.mode == "hold" and (pointer - wheel.openPointer).Magnitude < 12 then
+			setHovered(nil)
+			return
+		end
 	end
 	-- Pestaña de página: pasar el puntero por encima cambia de página
 	if wheel.tab and wheel.tab.Visible and inside(wheel.tab, pointer) then
@@ -2412,6 +2428,11 @@ albumToggle = function()
 	setAlbum(not album.open)
 end
 
+-- Álbum abierto o rueda desplegada (para no morder mientras tanto)
+function Emotes.isOpen(): boolean
+	return album.open == true or wheel.open == true
+end
+
 ------------------------------------------------------------------------------------------------
 -- Combo y avisos
 ------------------------------------------------------------------------------------------------
@@ -2594,10 +2615,13 @@ function Emotes.start(remoteFolder: Folder)
 	end)
 	UserInputService.InputEnded:Connect(function(input)
 		if input.KeyCode == Enum.KeyCode.Y and wheel.open and not wheel.touch then
-			local quick = os.clock() - wheel.openedAt < 0.25
+			-- Toque = soltar sin haber elegido nada y: rápido (por tiempo o por fotogramas, que el
+			-- primer abrir puede dar un tirón de más de 0,25 s) o sin haber movido el ratón
+			local quick = os.clock() - wheel.openedAt < 0.4 or wheel.frames <= 3
+			local still = (UserInputService:GetMouseLocation() - wheel.openPointer).Magnitude < 12
 			if wheel.hovered then
 				closeWheel(true)
-			elseif quick then
+			elseif quick or still then
 				closeWheel(false)
 				albumToggle()
 			else

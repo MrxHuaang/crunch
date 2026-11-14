@@ -284,7 +284,7 @@ local function buildCover(layer: number)
 	mark.ZIndex = 18
 	Comic.boil(badge, 8)
 
-	covers[layer] = { cover = cover, holder = holder, face = face, label = label, promise = promise, badge = badge }
+	covers[layer] = { cover = cover, holder = holder, face = face, label = label, promise = promise, promiseText = promise.Text, badge = badge }
 end
 
 local function buildRoyal()
@@ -782,7 +782,10 @@ function Tree.refresh(): boolean
 		end
 	end
 
-	local digCost = Stats.digCost(depth)
+	-- Pala dorada (atributo HalfDig > 0, ver Shop.dig): la siguiente capa cuesta la mitad
+	local half = State.num("HalfDig") > 0
+	local fullDigCost = Stats.digCost(depth)
+	local digCost = if half then fullDigCost * 0.5 else fullDigCost
 	local canDig = food >= digCost
 	anyAffordable = anyAffordable or canDig
 	for layer, view in covers do
@@ -793,6 +796,10 @@ function Tree.refresh(): boolean
 		view.badge.Visible = isNext and canDig
 		if isNext then
 			view.label.Text = if canDig then "Excavar por " .. Format.short(digCost) else "Faltan " .. Format.short(digCost - food)
+			view.promise.Text = if half
+				then "Pala dorada: a mitad (antes " .. Format.short(fullDigCost) .. ")"
+				else view.promiseText
+			view.promise.TextColor3 = if half then Comic.Yellow else Comic.Paper
 			view.face.BackgroundColor3 = if canDig then Comic.Yellow else Comic.DirtLight
 		end
 	end

@@ -33,6 +33,7 @@ local Comic = require(script.Parent.Comic)
 local Hud = require(script.Parent.Hud)
 local Sfx = require(script.Parent.Sfx)
 local State = require(script.Parent.State)
+local ViewFit = require(script.Parent.ViewFit)
 
 local CasteClient = {}
 
@@ -1408,6 +1409,8 @@ local previewCamera: Camera? = nil
 local previewAura: (() -> ())? = nil
 local previewFor = ""
 local previewAngle = 0
+local previewViewport: ViewportFrame? = nil
+local previewFit = {} -- encuadre (ViewFit): caja real de la hormiga con su aura
 local PREVIEW_AT = CFrame.new(0, 2000, 0) -- lejos: lo que un aura cuelgue en el mundo no se ve
 
 local function list(): { any }
@@ -1587,6 +1590,7 @@ local function buildHero()
 	camera.Parent = viewport
 	viewport.CurrentCamera = camera
 	previewCamera = camera
+	previewViewport = viewport
 
 	local nameShadow = Comic.label(hero, "", Comic.Display, 92, Comic.Ink)
 	at(nameShadow, 26, 30, 420, 100)
@@ -2000,9 +2004,12 @@ local function paintSheet(def)
 	end
 	p.keyBox.BackgroundColor3 = Comic.Paper
 	p.title.Text = tostring(passive.name or "Pasiva")
-	p.meta.Text = "siempre"
+	-- La etiqueta va sobre el borde, en la esquina donde estaba el tiempo y lo pisaba: el tiempo
+	-- entra en la propia etiqueta y la línea de tiempo se esconde
+	p.meta.Text = ""
+	p.meta.Visible = false
 	p.desc.Text = Castes.fill(passive.desc, resolved, passive.id)
-	p.tag.Text = "PASIVA"
+	p.tag.Text = "PASIVA · SIEMPRE"
 	p.tag.BackgroundColor3 = Comic.Cyan
 	p.tag.Visible = true
 	p.veil.Visible = false
@@ -2025,7 +2032,9 @@ local function paintSheet(def)
 		row.meta.Text = seconds(cd)
 		row.desc.Text = Castes.fill(ability.desc, resolved, ability.id)
 		row.tag.Visible = ability.ultimate == true
-		row.tag.Text = "DEFINITIVA"
+		-- Definitiva: el enfriamiento va dentro de su etiqueta (antes se pisaban en la esquina)
+		row.meta.Visible = not row.tag.Visible
+		row.tag.Text = if row.tag.Visible then "DEFINITIVA · " .. seconds(cd) else "DEFINITIVA"
 		row.tag.BackgroundColor3 = GOLD
 		row.face.BackgroundColor3 = if ability.ultimate then Color3.fromRGB(255, 240, 196) else Comic.Paper
 		row.keyBox.BackgroundColor3 = if ability.ultimate then GOLD else Comic.Yellow
@@ -2054,6 +2063,7 @@ local function rebuildPreviewLook()
 	end
 	model:PivotTo(PREVIEW_AT)
 	previewFor = ""
+	ViewFit.reset(previewFit)
 end
 
 local function ensurePreview()
@@ -2094,6 +2104,7 @@ local function paintPreview(def)
 	if ok and type(result) == "function" then
 		previewAura = result
 	end
+	ViewFit.reset(previewFit)
 end
 
 local function paintHero(def)
@@ -2441,11 +2452,11 @@ function CasteClient.open()
 			end
 			local camera = previewCamera
 			local model = preview
-			if camera and model and not compact then
+			if camera and model and previewViewport and not compact then
 				previewAngle += dt * 0.55
-				local center = model:GetPivot().Position + Vector3.new(0, 0.2, 0)
-				local dist = 8.2
-				camera.CFrame = CFrame.lookAt(center + Vector3.new(math.sin(previewAngle) * dist, 2.4, math.cos(previewAngle) * dist), center)
+				-- Antes miraba al pivote (la raíz, en el tórax) a 8,2 fijos: el abdomen se salía del
+				-- marco. Ahora se centra en la caja real y la distancia sale del campo de visión.
+				ViewFit.orbit(camera, previewViewport, model, previewAngle, previewFit)
 			end
 			-- El rango actual late en el camino
 			local def = selectedDef()
