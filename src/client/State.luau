@@ -77,6 +77,11 @@ local function rebuild()
 		cachedRoyal[def.id] = State.num("R_" .. def.id)
 	end
 	cachedStats = Stats.derive(cachedNodes, cachedRoyal, State.depth(), State.minis())
+	-- La carga real la decide el servidor (las castas pueden cambiarla): manda su atributo
+	local capacity = player:GetAttribute("Capacity")
+	if type(capacity) == "number" and capacity > 0 then
+		cachedStats.capacity = capacity
+	end
 end
 
 function State.nodes()
@@ -125,7 +130,7 @@ end
 
 -- Solo los niveles, la jalea real, la profundidad y las galerías cambian las estadísticas:
 -- la comida cambia a cada rato y no hace falta recalcularlas por ella.
-local STAT_ATTRIBUTES = { Depth = true, Minis = true }
+local STAT_ATTRIBUTES = { Depth = true, Minis = true, Capacity = true }
 
 player.AttributeChanged:Connect(function(name: string)
 	local head = string.sub(name, 1, 2)
