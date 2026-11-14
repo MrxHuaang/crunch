@@ -162,16 +162,17 @@ end
 -- sube el tope de las mejoras con `per` y abre la zona siguiente del túnel.
 -- costo = cost * growth^nivel (o la lista `costs`). per: niveles disponibles por capa desde la suya.
 -- needs = "workers": hace falta tener al menos una obrera.
--- Cada rama tiene una franja de 380 px: su pozo (cámaras grandes) y, a la derecha, las galerías
--- (cámaras pequeñas) en una rejilla de 3 x 3 por capa.
+-- Cada rama tiene una franja de 345 px: su pozo (cámaras grandes) y, a la derecha, las galerías
+-- (cámaras pequeñas) en una rejilla de 3 x 3 por capa. La quinta rama (Aliadas) no tiene galerías:
+-- solo su pozo, pegado al borde derecho.
 Config.TreeLayout = {
 	Width = 1600,
 	Top = 290, -- y de la primera fila
 	LayerHeight = 300,
 	RowGap = 132,
-	Regions = { M = 40, P = 420, C = 800, F = 1180 }, -- x donde empieza la franja de cada rama
+	Regions = { M = 30, P = 375, C = 720, F = 1065, A = 1420 }, -- x donde empieza la franja de cada rama
 	Shaft = 75, -- x del pozo dentro de su franja
-	MiniColumns = { 185, 265, 345 }, -- x de las galerías dentro de su franja
+	MiniColumns = { 170, 240, 310 }, -- x de las galerías dentro de su franja
 	MiniRows = { -30, 50, 130 }, -- y de las galerías respecto a la primera fila de su capa
 }
 
@@ -181,10 +182,10 @@ Config.Layers = {
 	"Caliza", "Roca fría", "Pizarra", "Granito", "Roca viva", "Cristal", "El fondo",
 }
 Config.StageGrowth = 110 -- cada capa todo cuesta (y rinde) unas 110 veces más
-Config.DigBase = 3000 -- excavar la capa 2; cada capa siguiente, StageGrowth veces más
+Config.DigBase = 5000 -- excavar la capa 2; cada capa siguiente, StageGrowth veces más (subió de 3000 al llegar la abeja mensajera)
 Config.CostScale = 0.5 -- abarata o encarece todo el árbol de golpe (ver tools/sim.py)
 
-local BRANCH = { M = "Mandíbulas", P = "Patas", C = "Colonia", F = "Feromonas" }
+local BRANCH = { M = "Mandíbulas", P = "Patas", C = "Colonia", F = "Feromonas", A = "Aliadas" }
 
 -- `cost` se escribe a escala de la capa 1 y se multiplica por StageGrowth^(capa - 1).
 local function node(id, col, layer, row, def)
@@ -248,6 +249,38 @@ Config.Tree = {
 	node("express", "F", 6, 1, { name = "Autopista", desc = "Las obreras tardan menos en cada viaje.", max = 5, cost = 40, growth = 5, parent = "smart", icon = "workerSpeed" }),
 	node("hive", "F", 8, 1, { name = "Mente colmena", desc = "El frenesí se recupera antes.", max = 5, cost = 40, growth = 5, parent = "express", icon = "smart" }),
 	node("royalPher", "F", 10, 1, { name = "Feromona real", desc = "El frenesí es todavía más fuerte.", max = 3, cost = 40, growth = 10, parent = "hive", icon = "frenzy" }),
+
+	-- Aliadas: bichos y cachivaches que trabajan contigo y se ven en el mundo (ver Config.Allies).
+	-- Un juguete nuevo casi en cada capa; cada nivel se abre con la capa siguiente (per = 1).
+	node("bee", "A", 2, 1, { name = "Abeja mensajera", desc = "Una abeja viene a por tu carga y la lleva volando a tu hormiguero.", max = 6, per = 1, cost = 60, growth = 100, icon = "wings" }),
+	node("magnet", "A", 3, 1, { name = "Imán de migas", desc = "Las migas pequeñas que pasan cerca saltan solas a tus mandíbulas.", max = 5, per = 1, cost = 50, growth = 100, parent = "bee", icon = "royalFood" }),
+	node("beetle", "A", 4, 1, { name = "Escarabajo de carga", desc = "Un escarabajo te sigue y carga lo que ya no te cabe.", max = 5, per = 1, cost = 50, growth = 100, parent = "magnet", icon = "carry" }),
+	node("escort", "A", 5, 1, { name = "Escolta", desc = "Soldados pequeños que van contigo y muerden lo que muerdes tú.", max = 5, per = 1, cost = 50, growth = 100, parent = "beetle", icon = "barracks" }),
+	node("stomp", "A", 6, 1, { name = "Pisotón", desc = "Un pisotón que muerde toda la comida de alrededor a la vez.", max = 5, per = 1, cost = 60, growth = 100, parent = "escort", icon = "area", hint = "{tecla} y doy un pisotón que muerde todo alrededor", key = "X", button = "Pisotón" }),
+	node("sling", "A", 7, 1, { name = "Tirachinas", desc = "Lanzas toda tu carga de un tirón hasta tu hormiguero.", max = 5, per = 1, cost = 60, growth = 100, parent = "stomp", icon = "speed", hint = "{tecla} y lanzo la carga a mi hormiguero", key = "C", button = "Lanzar" }),
+	node("lens", "A", 9, 1, { name = "Lupa solar", desc = "Una lupa quema de vez en cuando un buen trozo de la comida más grande que tengas cerca.", max = 5, per = 1, cost = 50, growth = 100, parent = "sling", icon = "smart" }),
+	node("mega", "A", 11, 1, { name = "Mega crunch", desc = "Si muerdes sin parar, cada cierto número de mordiscos llega uno gigante.", max = 4, per = 1, cost = 60, growth = 100, parent = "lens", icon = "royalBite" }),
+}
+
+-- Números de las Aliadas. Los niveles se traducen a estadísticas en Stats.derive.
+Config.Allies = {
+	-- Viene cada Interval s (Step menos por nivel, nunca menos de MinInterval) si llevas al menos
+	-- MinLoad de tu carga; desde el nivel FullAt también en cuanto te llenas. Vuela de verdad, a
+	-- Speed studs/s (SpeedStep más por nivel; cada tramo dura al menos MinFly s), y no vuelve a por
+	-- otra carga hasta regresar: lejos de casa ayuda menos. Es la mejora que más mueve el ritmo
+	-- (es un segundo porteador): antes de tocar Speed, mira tools/sim.py.
+	Bee = { Interval = 45, Step = 6.6, MinInterval = 12, MinLoad = 0.5, FullAt = 4, Speed = 14, SpeedStep = 3, MinFly = 1.6, Approach = 0.45 },
+	-- Cada Tick s se traga hasta Count comidas a Radius studs que caerían en Bites mordiscos tuyos
+	Magnet = { Tick = 0.6, Radius = 9, RadiusStep = 3, Bites = 2, Count = 2 },
+	Beetle = { Share = 0.4 }, -- carga extra por nivel, sobre la tuya
+	-- Mientras muerdes (y Linger s después), cada Tick s cada soldado arranca Share de tu mordida
+	Escort = { Tick = 0.7, Share = 0.3, Linger = 1.5 },
+	Stomp = { Cooldown = 30, Step = 4, Radius = 12, RadiusStep = 2, Mult = 3 },
+	Sling = { Cooldown = 40, Step = 5, Range = 400, RangeStep = 200, FlyTime = 2 },
+	-- Cada Interval s quema Mult mordiscos de la comida más grande a Radius studs. La comida va directa a casa.
+	Lens = { Interval = 20, Step = 2, Radius = 40, Mult = 4, MultStep = 2, Delay = 0.9 },
+	-- Cada Every mordiscos seguidos, uno que pega Mult veces y salpica a Radius studs
+	Mega = { Every = 25, Step = 3, Mult = 10, MultStep = 5, Radius = 10 },
 }
 
 -- Dos niveles de guardería por capa

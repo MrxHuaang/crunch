@@ -28,7 +28,7 @@ local MINI = 54 -- galerías: cámaras pequeñas de un solo nivel
 local FIRST_BAND = 210
 local LAYERS = #Config.Layers
 local ROYAL = { x = 60, y = FIRST_BAND + LAYERS * LAYOUT.LayerHeight + 36, w = 1480, h = 120 }
-local CONTENT = ROYAL.y + ROYAL.h + 60
+local CONTENT = ROYAL.y + ROYAL.h + 150 -- hueco para los botones fijos de abajo
 local GOLD = Color3.fromRGB(255, 226, 150)
 
 local gui: ScreenGui
@@ -147,7 +147,7 @@ local function buildNode(def)
 	-- Estrecho: a la derecha empiezan las galerías
 	local name = Comic.label(canvas, def.name, Comic.Body, 17, Comic.Paper)
 	name.AnchorPoint = Vector2.new(0.5, 0)
-	at(name, def.x, def.y + CHAMBER / 2 + 13, 150, 20)
+	at(name, def.x, def.y + CHAMBER / 2 + 13, 130, 20) -- las galerías empiezan 68 px a la derecha del pozo
 	name.TextScaled = true
 	name.ZIndex = 5
 	Comic.ink(name, 3)
@@ -195,7 +195,9 @@ local function buildMinis()
 		button.BackgroundColor3 = Comic.DirtDark
 		button.ZIndex = 5
 		Comic.round(button)
+		-- Con la unión en inglete el borde sale cuadrado aunque la caja sea redonda
 		local stroke = Comic.ink(button, 3, true)
+		stroke.LineJoinMode = Enum.LineJoinMode.Round
 
 		local image = Comic.image(button, Assets.Icons[def.icon] or Assets.Icons.anthill)
 		image.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -525,15 +527,24 @@ local function build()
 			local seam = Comic.frame(canvas, Comic.Ink)
 			at(seam, 0, top - 3, W, 6)
 			seam.ZIndex = 2
-			-- Cabe a la izquierda de las galerías de Mandíbulas (x < 200)
-			local tag = Comic.label(canvas, "Capa " .. layer .. " · " .. Config.Layers[layer], Comic.Display, 22, Comic.Paper)
-			at(tag, 18, top + 8, 176, 24)
+			-- Etiqueta sobre una píldora oscura, por encima del pozo de Mandíbulas (que la cruza) y
+			-- encima de su primera cámara; cabe a la izquierda de sus galerías (x < 170)
+			local tag = Comic.label(canvas, "Capa " .. layer .. " · " .. Config.Layers[layer], Comic.Display, 20, Comic.Paper)
+			at(tag, 10, top + 6, 156, 26)
 			tag.TextXAlignment = Enum.TextXAlignment.Left
 			tag.TextScaled = true
-			tag.TextTransparency = 0.25
-			tag.ZIndex = 2
+			tag.BackgroundColor3 = Comic.Ink
+			tag.BackgroundTransparency = 0.3
+			tag.ZIndex = 7
+			Comic.round(tag, 10)
+			local padTag = Instance.new("UIPadding")
+			padTag.PaddingLeft = UDim.new(0, 8)
+			padTag.PaddingRight = UDim.new(0, 8)
+			padTag.PaddingTop = UDim.new(0, 2)
+			padTag.PaddingBottom = UDim.new(0, 2)
+			padTag.Parent = tag
 			local fitTag = Instance.new("UITextSizeConstraint")
-			fitTag.MaxTextSize = 22
+			fitTag.MaxTextSize = 20
 			fitTag.Parent = tag
 		end
 	end
@@ -561,7 +572,12 @@ local function build()
 	-- Pozo de entrada y galería de la que cuelgan las ramas
 	local regions = LAYOUT.Regions
 	tunnel(W / 2, SURFACE, W / 2, GALLERY).BackgroundColor3 = Comic.DirtLight
-	tunnel(regions.M + LAYOUT.Shaft, GALLERY, regions.F + LAYOUT.Shaft, GALLERY).BackgroundColor3 = Comic.DirtLight
+	local leftmost, rightmost = math.huge, -math.huge
+	for _, x in regions do
+		leftmost = math.min(leftmost, x)
+		rightmost = math.max(rightmost, x)
+	end
+	tunnel(leftmost + LAYOUT.Shaft, GALLERY, rightmost + LAYOUT.Shaft, GALLERY).BackgroundColor3 = Comic.DirtLight
 
 	local seen = {}
 	for _, def in Config.Tree do

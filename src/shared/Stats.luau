@@ -55,9 +55,23 @@ local function miniTotals(minis)
 	return totals, zoneMult
 end
 
+-- Aliadas: cada número por nivel (0 = no la tienes). Las usan derive y las fichas del árbol.
+local ALLY = Config.Allies
+
+-- Valor de una mejora que empieza en `base` y cambia `step` por nivel a partir del primero
+local function ramp(l: number, base: number, step: number): number
+	return if l > 0 then base + step * (l - 1) else 0
+end
+
+function Stats.beeInterval(l: number): number
+	local bee = ALLY.Bee
+	return if l > 0 then math.max(bee.MinInterval, math.floor(bee.Interval - bee.Step * (l - 1) + 0.5)) else 0
+end
+
 -- minis: { [idGalería] = true } (opcional)
 function Stats.derive(nodes, royal, depth: number?, minis: { [string]: boolean }?)
 	local nursery = lvl(nodes, "nursery")
+	local beetle = lvl(nodes, "beetle")
 	local storage = lvl(nodes, "storage")
 	local area = lvl(nodes, "area")
 	local eggs = lvl(nodes, "eggs")
@@ -84,7 +98,10 @@ function Stats.derive(nodes, royal, depth: number?, minis: { [string]: boolean }
 		goldChance = math.min(Config.MiniTune.GoldCap, m("goldPct")),
 		zoneMult = zoneMult, -- [zona] = multiplicador del valor de su comida
 
-		capacity = math.floor(Stats.capacity(lvl(nodes, "carry"), lvl(nodes, "giant")) * (1 + m("carryPct"))),
+		-- capacity cuenta también lo que lleva el escarabajo; ownCapacity es solo lo tuyo
+		ownCapacity = math.floor(Stats.capacity(lvl(nodes, "carry"), lvl(nodes, "giant")) * (1 + m("carryPct"))),
+		capacity = math.floor(Stats.capacity(lvl(nodes, "carry"), lvl(nodes, "giant")) * (1 + m("carryPct")) * (1 + ALLY.Beetle.Share * beetle)),
+		beetleShare = ALLY.Beetle.Share * beetle,
 		walkSpeed = Stats.walkSpeed(lvl(nodes, "speed"), lvl(royal, "royalSpeed")) * (1 + m("speedPct")),
 		hasSprint = lvl(nodes, "sprint") > 0,
 		sprintDuration = Config.Sprint.Duration + lvl(nodes, "stamina"),
@@ -123,6 +140,21 @@ function Stats.derive(nodes, royal, depth: number?, minis: { [string]: boolean }
 
 		foodMult = (1 + 0.5 * lvl(royal, "royalFood")) * (1 + m("foodPct")),
 		jellyMult = (1 + 0.15 * lvl(royal, "royalJelly")) * (1 + m("jellyPct")),
+
+		-- Aliadas (0 = no la tienes)
+		beeInterval = Stats.beeInterval(lvl(nodes, "bee")),
+		beeOnFull = lvl(nodes, "bee") >= ALLY.Bee.FullAt,
+		beeSpeed = ramp(lvl(nodes, "bee"), ALLY.Bee.Speed, ALLY.Bee.SpeedStep),
+		magnetRadius = ramp(lvl(nodes, "magnet"), ALLY.Magnet.Radius, ALLY.Magnet.RadiusStep),
+		escorts = lvl(nodes, "escort"),
+		stompCooldown = ramp(lvl(nodes, "stomp"), ALLY.Stomp.Cooldown, -ALLY.Stomp.Step),
+		stompRadius = ramp(lvl(nodes, "stomp"), ALLY.Stomp.Radius, ALLY.Stomp.RadiusStep),
+		slingCooldown = ramp(lvl(nodes, "sling"), ALLY.Sling.Cooldown, -ALLY.Sling.Step),
+		slingRange = ramp(lvl(nodes, "sling"), ALLY.Sling.Range, ALLY.Sling.RangeStep),
+		lensInterval = ramp(lvl(nodes, "lens"), ALLY.Lens.Interval, -ALLY.Lens.Step),
+		lensMult = ramp(lvl(nodes, "lens"), ALLY.Lens.Mult, ALLY.Lens.MultStep),
+		megaEvery = ramp(lvl(nodes, "mega"), ALLY.Mega.Every, -ALLY.Mega.Step),
+		megaMult = ramp(lvl(nodes, "mega"), ALLY.Mega.Mult, ALLY.Mega.MultStep),
 	}
 end
 
@@ -365,6 +397,42 @@ local EFFECT = {
 	end,
 	royalPher = function(l)
 		return "Frenesí " .. times(Config.Frenzy.Mult + l)
+	end,
+	bee = function(l)
+		if l <= 0 then
+			return "Sin abeja"
+		end
+		local speed = ramp(l, ALLY.Bee.Speed, ALLY.Bee.SpeedStep)
+		return "Cada " .. Stats.beeInterval(l) .. " s" .. (if l >= ALLY.Bee.FullAt then " y al llenarte" else "") .. ", vuela a " .. speed .. " pasos/s"
+	end,
+	magnet = function(l)
+		return if l > 0 then "Atrae migas a " .. ramp(l, ALLY.Magnet.Radius, ALLY.Magnet.RadiusStep) .. " pasos" else "Sin imán"
+	end,
+	beetle = function(l)
+		return if l > 0 then "Carga " .. percent(ALLY.Beetle.Share * l) .. " más que tú sola" else "Sin escarabajo"
+	end,
+	escort = function(l)
+		return if l == 0 then "Sin escolta" elseif l == 1 then "1 soldado" else l .. " soldados"
+	end,
+	stomp = function(l)
+		return if l > 0
+			then "Radio de " .. ramp(l, ALLY.Stomp.Radius, ALLY.Stomp.RadiusStep) .. " pasos, cada " .. ramp(l, ALLY.Stomp.Cooldown, -ALLY.Stomp.Step) .. " s"
+			else "Sin pisotón"
+	end,
+	sling = function(l)
+		return if l > 0
+			then "Hasta " .. ramp(l, ALLY.Sling.Range, ALLY.Sling.RangeStep) .. " pasos, cada " .. ramp(l, ALLY.Sling.Cooldown, -ALLY.Sling.Step) .. " s"
+			else "Sin tirachinas"
+	end,
+	lens = function(l)
+		return if l > 0
+			then "Quema " .. ramp(l, ALLY.Lens.Mult, ALLY.Lens.MultStep) .. " mordiscos cada " .. ramp(l, ALLY.Lens.Interval, -ALLY.Lens.Step) .. " s"
+			else "Sin lupa"
+	end,
+	mega = function(l)
+		return if l > 0
+			then "Cada " .. ramp(l, ALLY.Mega.Every, -ALLY.Mega.Step) .. " mordiscos, uno " .. times(ramp(l, ALLY.Mega.Mult, ALLY.Mega.MultStep))
+			else "Sin mega crunch"
 	end,
 	royalFood = function(l)
 		return "Comida " .. times(1 + 0.5 * l)
