@@ -837,18 +837,18 @@ Config.Trails = {
 -- (src/client/Stalls.luau). Efectos: src/server/Profiles.luau (los ocho primeros) y
 -- src/server/Monetize.luau (el resto). Nada de pago es obligatorio: todo se consigue jugando.
 Config.Passes = {
-	{ id = "x2Food", passId = 0, robux = 199, group = "Para siempre", name = "Comida doble", desc = "Toda la comida vale el doble, para siempre." },
-	{ id = "autoBite", passId = 0, robux = 149, group = "Para siempre", name = "Mordida automática", desc = "Tu hormiga muerde sola en cuanto tiene comida a tiro." },
-	{ id = "fastColony", passId = 0, robux = 149, group = "Para siempre", name = "Colonia veloz", desc = "Tus obreras trabajan al doble, para siempre." },
-	{ id = "goldWings", passId = 0, robux = 129, group = "Para siempre", name = "Alas doradas", desc = "Alas desde el primer minuto y casi sin espera entre vuelos." },
-	{ id = "vip", passId = 0, robux = 299, group = "Para siempre", name = "VIP", desc = "Un 25 % más de comida, estela de oro y tu cartel con estrella." },
-	{ id = "x2Jelly", passId = 0, robux = 249, group = "Para siempre", name = "Jalea doble", desc = "Cada enjambre te da el doble de jalea." },
-	{ id = "turbo", passId = 0, robux = 99, group = "Para siempre", name = "Patas turbo", desc = "Caminas un 30 % más rápido, para siempre." },
-	{ id = "bigStore", passId = 0, robux = 99, group = "Para siempre", name = "Despensa sin fondo", desc = "La colonia trabaja 24 horas sin ti, y al 100 %." },
-	{ id = "bigCarry", passId = 0, robux = 129, group = "Para siempre", name = "Mochila grande", desc = "Cargas un 50 % más de trozos en cada viaje, para siempre." },
+	{ id = "x2Food", passId = 2088369535, robux = 199, group = "Para siempre", name = "Comida doble", desc = "Toda la comida vale el doble, para siempre." },
+	{ id = "autoBite", passId = 2089911561, robux = 149, group = "Para siempre", name = "Mordida automática", desc = "Tu hormiga muerde sola en cuanto tiene comida a tiro." },
+	{ id = "fastColony", passId = 2088333604, robux = 149, group = "Para siempre", name = "Colonia veloz", desc = "Tus obreras trabajan al doble, para siempre." },
+	{ id = "goldWings", passId = 2089929537, robux = 129, group = "Para siempre", name = "Alas doradas", desc = "Alas desde el primer minuto y casi sin espera entre vuelos." },
+	{ id = "vip", passId = 2089629650, robux = 299, group = "Para siempre", name = "VIP", desc = "Un 25 % más de comida, estela de oro y tu cartel con estrella." },
+	{ id = "x2Jelly", passId = 2088297560, robux = 249, group = "Para siempre", name = "Jalea doble", desc = "Cada enjambre te da el doble de jalea." },
+	{ id = "turbo", passId = 2089557565, robux = 99, group = "Para siempre", name = "Patas turbo", desc = "Caminas un 30 % más rápido, para siempre." },
+	{ id = "bigStore", passId = 2089803567, robux = 99, group = "Para siempre", name = "Despensa sin fondo", desc = "La colonia trabaja 24 horas sin ti, y al 100 %." },
+	{ id = "bigCarry", passId = 2088795574, robux = 129, group = "Para siempre", name = "Mochila grande", desc = "Cargas un 50 % más de trozos en cada viaje, para siempre." },
 	-- Una vez por cuenta: el contenido se entrega la primera vez que se tiene el pase (data.paid.starter)
-	{ id = "starterPack", passId = 0, robux = 99, group = "Para siempre", name = "Paquete de inicio", desc = "Una sola vez: 30 minutos de trabajo de tu colonia, 30 minutos de comida x2, 10 de jalea real y un huevo dorado." },
-	{ id = "goldHill", passId = 0, robux = 79, group = "Aspecto", name = "Hormiguero dorado", desc = "Adornos de oro en tu hormiguero, que ven todas, y la estela Cometa. Solo aspecto: no da comida." },
+	{ id = "starterPack", passId = 2089275586, robux = 99, group = "Para siempre", name = "Paquete de inicio", desc = "Una sola vez: 30 minutos de trabajo de tu colonia, 30 minutos de comida x2, 10 de jalea real y un huevo dorado." },
+	{ id = "goldHill", passId = 2089629651, robux = 79, group = "Aspecto", name = "Hormiguero dorado", desc = "Adornos de oro en tu hormiguero, que ven todas, y la estela Cometa. Solo aspecto: no da comida." },
 }
 
 -- Productos: se pueden comprar las veces que quieras.
@@ -859,38 +859,38 @@ Config.Passes = {
 Config.Products = {
 	-- Avance. Excavadora ≈ la comida de excavar esa capa (activo hoy en el simulador: capas 2-4
 	-- unos 18, 8 y 4 min; de la 5 en adelante, de 2 min a segundos: por eso cuesta menos por capa)
-	{ id = "dig1", productId = 0, robux = 49, group = "Avance", layers = { 2, 4 }, name = "Excavadora", desc = "Excava ya la siguiente capa sin pagar comida. Para abrir las capas 2, 3 o 4." },
-	{ id = "dig2", productId = 0, robux = 79, group = "Avance", layers = { 5, 8 }, name = "Excavadora grande", desc = "Excava ya la siguiente capa sin pagar comida. Para abrir las capas 5 a 8." },
-	{ id = "dig3", productId = 0, robux = 99, group = "Avance", layers = { 9, 12 }, name = "Excavadora pesada", desc = "Excava ya la siguiente capa sin pagar comida. Para abrir las capas 9 a 12." },
-	{ id = "dig4", productId = 0, robux = 129, group = "Avance", layers = { 13, 14 }, name = "Excavadora gigante", desc = "Excava ya la siguiente capa sin pagar comida. Para abrir las capas 13 y 14." },
+	{ id = "dig1", productId = 3731485910, robux = 49, group = "Avance", layers = { 2, 4 }, name = "Excavadora", desc = "Excava ya la siguiente capa sin pagar comida. Para abrir las capas 2, 3 o 4." },
+	{ id = "dig2", productId = 3731486042, robux = 79, group = "Avance", layers = { 5, 8 }, name = "Excavadora grande", desc = "Excava ya la siguiente capa sin pagar comida. Para abrir las capas 5 a 8." },
+	{ id = "dig3", productId = 3731486058, robux = 99, group = "Avance", layers = { 9, 12 }, name = "Excavadora pesada", desc = "Excava ya la siguiente capa sin pagar comida. Para abrir las capas 9 a 12." },
+	{ id = "dig4", productId = 3731486072, robux = 129, group = "Avance", layers = { 13, 14 }, name = "Excavadora gigante", desc = "Excava ya la siguiente capa sin pagar comida. Para abrir las capas 13 y 14." },
 	-- ≈ la mitad de la comida de excavar la capa siguiente
-	{ id = "halfDig", productId = 0, robux = 39, group = "Avance", name = "Pala dorada", desc = "La próxima capa que excaves cuesta la mitad de comida. Se guarda hasta que la uses." },
+	{ id = "halfDig", productId = 3731486092, robux = 39, group = "Avance", name = "Pala dorada", desc = "La próxima capa que excaves cuesta la mitad de comida. Se guarda hasta que la uses." },
 	-- ≈ 30 min con la comida de la zona siguiente (cada trozo vale unas 4 veces más); la capa no cambia
-	{ id = "zoneKey", productId = 0, robux = 29, group = "Avance", name = "Llave maestra", desc = "Abre la puerta de la zona siguiente durante 30 minutos para que la pruebes. Tu capa no cambia." },
+	{ id = "zoneKey", productId = 3731486122, robux = 29, group = "Avance", name = "Llave maestra", desc = "Abre la puerta de la zona siguiente durante 30 minutos para que la pruebes. Tu capa no cambia." },
 	-- Tiempo. Saco = 15 min de colonia; caja = 60; carretilla = 240. Frenesí ≈ 2 min de comida
 	-- (x3 durante 60 s). Huevo = 90 s de colonia.
-	{ id = "sack", productId = 0, robux = 29, group = "Tiempo", name = "Saco de comida", desc = "15 minutos de trabajo de tu colonia, de golpe." },
-	{ id = "crate", productId = 0, robux = 69, group = "Tiempo", name = "Caja de comida", desc = "1 hora de trabajo de tu colonia, de golpe." },
-	{ id = "bigSack", productId = 0, robux = 179, group = "Tiempo", name = "Carretilla", desc = "4 horas de trabajo de tu colonia, de golpe." },
-	{ id = "frenzy", productId = 0, robux = 19, group = "Tiempo", name = "Frenesí ya", desc = "Un minuto de frenesí al instante." },
-	{ id = "egg", productId = 0, robux = 25, group = "Tiempo", name = "Huevo dorado", desc = "Un huevo dorado junto a tu hormiguero, ya." },
+	{ id = "sack", productId = 3731486161, robux = 29, group = "Tiempo", name = "Saco de comida", desc = "15 minutos de trabajo de tu colonia, de golpe." },
+	{ id = "crate", productId = 3731486197, robux = 69, group = "Tiempo", name = "Caja de comida", desc = "1 hora de trabajo de tu colonia, de golpe." },
+	{ id = "bigSack", productId = 3731486225, robux = 179, group = "Tiempo", name = "Carretilla", desc = "4 horas de trabajo de tu colonia, de golpe." },
+	{ id = "frenzy", productId = 3731486252, robux = 19, group = "Tiempo", name = "Frenesí ya", desc = "Un minuto de frenesí al instante." },
+	{ id = "egg", productId = 3731486283, robux = 25, group = "Tiempo", name = "Huevo dorado", desc = "Un huevo dorado junto a tu hormiguero, ya." },
 	-- Potenciadores. Poción: +15 / +60 min de comida (dobla lo que ganas ese rato). Velocidad +40 %
 	-- 15 min ≈ +3-4 min de comida a mano. Imán 15 min ≈ +1-2 min. Jalea x2 ≈ un enjambre más.
-	{ id = "potion", productId = 0, robux = 25, group = "Potenciadores", name = "Poción x2", desc = "Toda la comida vale el doble durante 15 minutos. Se acumula." },
-	{ id = "bigPotion", productId = 0, robux = 79, group = "Potenciadores", name = "Poción x2 grande", desc = "Toda la comida vale el doble durante 60 minutos. Se acumula." },
-	{ id = "speedBoost", productId = 0, robux = 25, group = "Potenciadores", name = "Patas de saltamontes", desc = "Caminas un 40 % más rápido durante 15 minutos. Se acumula." },
-	{ id = "magnet", productId = 0, robux = 29, group = "Potenciadores", name = "Imán de comida", desc = "Durante 15 minutos, la comida pequeña (la que acabas en 2 mordiscos) salta sola a ti desde 16 pasos." },
-	{ id = "jellyBoost", productId = 0, robux = 99, group = "Potenciadores", name = "Jalea x2", desc = "Tu próximo enjambre da el doble de jalea real. Se guarda hasta que enjambres." },
+	{ id = "potion", productId = 3731486315, robux = 25, group = "Potenciadores", name = "Poción x2", desc = "Toda la comida vale el doble durante 15 minutos. Se acumula." },
+	{ id = "bigPotion", productId = 3731486351, robux = 79, group = "Potenciadores", name = "Poción x2 grande", desc = "Toda la comida vale el doble durante 60 minutos. Se acumula." },
+	{ id = "speedBoost", productId = 3731486393, robux = 25, group = "Potenciadores", name = "Patas de saltamontes", desc = "Caminas un 40 % más rápido durante 15 minutos. Se acumula." },
+	{ id = "magnet", productId = 3731486425, robux = 29, group = "Potenciadores", name = "Imán de comida", desc = "Durante 15 minutos, la comida pequeña (la que acabas en 2 mordiscos) salta sola a ti desde 16 pasos." },
+	{ id = "jellyBoost", productId = 3731486463, robux = 99, group = "Potenciadores", name = "Jalea x2", desc = "Tu próximo enjambre da el doble de jalea real. Se guarda hasta que enjambres." },
 	-- Jalea: 5 y 30 de jalea real
-	{ id = "jar", productId = 0, robux = 49, group = "Jalea", name = "Tarro de jalea", desc = "5 de jalea real." },
-	{ id = "bigJar", productId = 0, robux = 199, group = "Jalea", name = "Barril de jalea", desc = "30 de jalea real." },
+	{ id = "jar", productId = 3731486501, robux = 49, group = "Jalea", name = "Tarro de jalea", desc = "5 de jalea real." },
+	{ id = "bigJar", productId = 3731486538, robux = 199, group = "Jalea", name = "Barril de jalea", desc = "30 de jalea real." },
 	-- Para todas: +5 min de comida a cada jugadora conectada (y relleno de la zona); la lluvia, ~25
 	-- comidas doradas (x10) repartidas por las zonas abiertas y 5 min con más comida dorada
-	{ id = "feast", productId = 0, robux = 99, group = "Para todas", wide = true, name = "Banquete instantáneo", desc = "Rellena ya la comida de tu zona más honda y toda la comida vale el doble durante 5 minutos para todas las del servidor." },
-	{ id = "goldRain", productId = 0, robux = 149, group = "Para todas", wide = true, name = "Lluvia dorada", desc = "Caen comidas doradas en todas las zonas abiertas y, durante 5 minutos, 1 de cada 4 comidas nuevas sale dorada. Tu nombre sale en el mercadillo." },
+	{ id = "feast", productId = 3731486571, robux = 99, group = "Para todas", wide = true, name = "Banquete instantáneo", desc = "Rellena ya la comida de tu zona más honda y toda la comida vale el doble durante 5 minutos para todas las del servidor." },
+	{ id = "goldRain", productId = 3731486615, robux = 149, group = "Para todas", wide = true, name = "Lluvia dorada", desc = "Caen comidas doradas en todas las zonas abiertas y, durante 5 minutos, 1 de cada 4 comidas nuevas sale dorada. Tu nombre sale en el mercadillo." },
 	-- Regalos: lo mismo que la poción pequeña y el saco, para otra jugadora del servidor
-	{ id = "giftPotion", productId = 0, robux = 25, group = "Regalos", gift = true, name = "Regalo: poción x2", desc = "Regalas a otra jugadora del servidor 15 minutos de comida doble." },
-	{ id = "giftSack", productId = 0, robux = 29, group = "Regalos", gift = true, name = "Regalo: saco de comida", desc = "Regalas a otra jugadora del servidor 15 minutos de trabajo de su colonia." },
+	{ id = "giftPotion", productId = 3731486674, robux = 25, group = "Regalos", gift = true, name = "Regalo: poción x2", desc = "Regalas a otra jugadora del servidor 15 minutos de comida doble." },
+	{ id = "giftSack", productId = 3731486712, robux = 29, group = "Regalos", gift = true, name = "Regalo: saco de comida", desc = "Regalas a otra jugadora del servidor 15 minutos de trabajo de su colonia." },
 }
 
 -- Jardín con mucha gente (src/server/Garden.luau, tools/sim.py).
