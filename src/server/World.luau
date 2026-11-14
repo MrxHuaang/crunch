@@ -551,51 +551,75 @@ local function buildZones()
 	gates.Parent = Workspace
 end
 
--- Tabla de las más glotonas, junto a la salida del jardín. La rellena el módulo Leaderboard.
+-- Dos carteles de las más glotonas, junto a la salida del jardín: las de este servidor y las del
+-- mundo entero. Los rellena el módulo Leaderboard.
 local function buildBoard()
 	local board = Instance.new("Model")
 	board.Name = "Board"
 	local spot = Vector3.new(-0.46 * MAP.LobbyRadius, GROUND, -0.66 * MAP.LobbyRadius)
 	local facing = CFrame.lookAt(spot + Vector3.new(0, 13, 0), Vector3.new(0, 13, 0))
-	for _, s in { -1, 1 } do
-		part(board, { size = Vector3.new(1.4, 14, 1.4), color = rgb(132, 86, 52), cframe = facing * CFrame.new(s * 9, -6.5, 0.4), collide = true })
-	end
-	local panel = part(board, { name = "Panel", size = Vector3.new(24, 22, 1), color = rgb(255, 244, 222), cframe = facing * CFrame.Angles(0, 0, math.rad(1.5)), collide = true })
-	part(board, { size = Vector3.new(27, 2.4, 1.8), color = rgb(230, 57, 70), cframe = facing * CFrame.new(0, 12, 0) * CFrame.Angles(0, 0, math.rad(-2)), blob = true })
-	for _, s in { -1, 1 } do
-		part(board, { size = Vector3.new(4, 4, 2.2), color = rgb(255, 210, 63), cframe = facing * CFrame.new(s * 12.6, 11.4, 0), blob = true })
+
+	local function panel(name: string, side: number, subtitle: string, ribbon: Color3)
+		-- Cada cartel se abre un poco hacia fuera, como las hojas de un biombo
+		local frame = facing * CFrame.new(side * 13.6, 0, 0) * CFrame.Angles(0, math.rad(side * 10), 0)
+		for _, s in { -1, 1 } do
+			part(board, { size = Vector3.new(1.4, 14, 1.4), color = rgb(132, 86, 52), cframe = frame * CFrame.new(s * 9, -6.5, 0.4), collide = true })
+		end
+		local face = part(board, { name = name, size = Vector3.new(24, 22, 1), color = rgb(255, 244, 222), cframe = frame * CFrame.Angles(0, 0, math.rad(side * 1.5)), collide = true })
+		part(board, { size = Vector3.new(27, 2.4, 1.8), color = ribbon, cframe = frame * CFrame.new(0, 12, 0) * CFrame.Angles(0, 0, math.rad(side * -2)), blob = true })
+		for _, s in { -1, 1 } do
+			part(board, { size = Vector3.new(4, 4, 2.2), color = rgb(255, 210, 63), cframe = frame * CFrame.new(s * 12.6, 11.4, 0), blob = true })
+		end
+
+		local gui = Instance.new("SurfaceGui")
+		gui.Name = "BoardGui"
+		gui.Face = Enum.NormalId.Front
+		gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+		gui.PixelsPerStud = 30
+		gui.LightInfluence = 0
+		gui.Parent = face
+
+		local title = Instance.new("TextLabel")
+		title.BackgroundTransparency = 1
+		title.Position = UDim2.new(0, 0, 0, 6)
+		title.Size = UDim2.new(1, 0, 0, 62)
+		title.FontFace = BANGERS
+		title.TextSize = 60
+		title.TextColor3 = INK
+		title.Text = "Las más glotonas"
+		title.Parent = gui
+
+		local sub = Instance.new("TextLabel")
+		sub.BackgroundTransparency = 1
+		sub.Position = UDim2.new(0, 0, 0, 62)
+		sub.Size = UDim2.new(1, 0, 0, 36)
+		sub.FontFace = BANGERS
+		sub.TextSize = 34
+		sub.TextColor3 = ribbon
+		sub.Text = subtitle
+		sub.Parent = gui
+
+		for i = 1, 10 do
+			local row = Instance.new("TextLabel")
+			row.Name = "Row" .. i
+			row.BackgroundTransparency = if i % 2 == 0 then 1 else 0.85
+			row.BackgroundColor3 = INK
+			row.BorderSizePixel = 0
+			row.Position = UDim2.new(0.04, 0, 0, 104 + (i - 1) * 54)
+			row.Size = UDim2.new(0.92, 0, 0, 50)
+			row.FontFace = BANGERS
+			row.TextSize = 40
+			row.TextColor3 = INK
+			row.TextXAlignment = Enum.TextXAlignment.Left
+			row.TextTruncate = Enum.TextTruncate.AtEnd
+			row.Text = ""
+			row.Parent = gui
+		end
 	end
 
-	local gui = Instance.new("SurfaceGui")
-	gui.Name = "BoardGui"
-	gui.Face = Enum.NormalId.Front
-	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-	gui.PixelsPerStud = 30
-	gui.LightInfluence = 0
-	gui.Parent = panel
-	local title = Instance.new("TextLabel")
-	title.BackgroundTransparency = 1
-	title.Size = UDim2.new(1, 0, 0, 90)
-	title.FontFace = BANGERS
-	title.TextSize = 74
-	title.TextColor3 = INK
-	title.Text = "Las más glotonas"
-	title.Parent = gui
-	for i = 1, 10 do
-		local row = Instance.new("TextLabel")
-		row.Name = "Row" .. i
-		row.BackgroundTransparency = if i % 2 == 0 then 1 else 0.85
-		row.BackgroundColor3 = INK
-		row.BorderSizePixel = 0
-		row.Position = UDim2.new(0.04, 0, 0, 96 + (i - 1) * 54)
-		row.Size = UDim2.new(0.92, 0, 0, 50)
-		row.FontFace = BANGERS
-		row.TextSize = 42
-		row.TextColor3 = INK
-		row.TextXAlignment = Enum.TextXAlignment.Left
-		row.Text = ""
-		row.Parent = gui
-	end
+	panel("ServerPanel", -1, "En este servidor", rgb(230, 57, 70))
+	panel("WorldPanel", 1, "En el mundo entero", rgb(40, 150, 230))
+
 	inkOutline(board)
 	board.Parent = Workspace
 end

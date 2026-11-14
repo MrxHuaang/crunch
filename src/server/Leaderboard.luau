@@ -16,6 +16,7 @@ local Leaderboard = {}
 local REFRESH = 90
 local names: { [number]: string } = {}
 local store = nil
+local worldDown = false -- la última consulta mundial falló (por ejemplo, Studio sin acceso a la API)
 
 -- Un OrderedDataStore solo guarda enteros, y la comida llega a números enormes:
 -- se guarda el logaritmo con seis decimales, que conserva el orden.
@@ -53,9 +54,10 @@ local function nameOf(userId: number): string
 	return name
 end
 
-local function paint(rows: { { name: string, total: number } })
+local function paint(panelName: string, rows: { { name: string, total: number } }, empty: string?)
 	local board = Workspace:FindFirstChild("Board")
-	local gui = board and board:FindFirstChild("BoardGui", true)
+	local panel = board and board:FindFirstChild(panelName)
+	local gui = panel and panel:FindFirstChild("BoardGui")
 	if not gui then
 		return
 	end
@@ -63,7 +65,12 @@ local function paint(rows: { { name: string, total: number } })
 		local label = gui:FindFirstChild("Row" .. i)
 		local row = rows[i]
 		if label and label:IsA("TextLabel") then
-			label.Text = if row then string.format("  %d.  %s   %s", i, row.name, Format.short(row.total)) else ""
+			if row then
+				label.Text = string.format("  %d.  %s   %s", i, row.name, Format.short(row.total))
+			else
+				-- Sin datos todavía: una línea que lo explica en vez de un cartel vacío
+				label.Text = if i == 1 and #rows == 0 and empty then "  " .. empty else ""
+			end
 		end
 	end
 end
@@ -93,6 +100,7 @@ local function globalRows()
 	local ok, pages = pcall(function()
 		return store:GetSortedAsync(false, 10)
 	end)
+	worldDown = not ok
 	if not ok then
 		return nil
 	end
@@ -131,20 +139,28 @@ function Leaderboard.start()
 		end
 	end)
 
-	-- Cartel: mundial si hay DataStore; si no, las de este servidor
+	-- Cartel del servidor: se repinta a menudo, sale de memoria
 	task.spawn(function()
-		local lastGlobal = 0
-		local global = nil
 		while true do
-			if os.clock() - lastGlobal > REFRESH then
-				lastGlobal = os.clock()
-				local rows = globalRows()
-				if rows and #rows > 0 then
-					global = rows
-				end
+			paint("ServerPanel", localRows())
+			task.wait(3)
+		end
+	end)
+
+	-- Cartel mundial: las diez con más comida reunida entre todos los servidores. Sale de un
+	-- OrderedDataStore, así que solo funciona con acceso a la API (siempre en el juego publicado).
+	task.spawn(function()
+		local global = {}
+		local first = true
+		while true do
+			local rows = globalRows()
+			if rows then
+				global = rows
 			end
-			paint(global or localRows())
-			task.wait(5)
+			paint("WorldPanel", global, if store and not worldDown then "Aún no hay nadie" else "Solo en el juego publicado")
+			-- La primera vuelta llega antes de que cargue nadie: se repite pronto para incluir a quien entra
+			task.wait(if first then 20 else REFRESH)
+			first = false
 		end
 	end)
 end

@@ -23,7 +23,7 @@ local function inLobby(spot: Vector3): boolean
 		end
 	end
 	-- Ni encima de la tabla de puntuaciones ni en la boca del camino
-	return (spot - Vector3.new(-0.46 * MAP.LobbyRadius, 0, -0.66 * MAP.LobbyRadius)).Magnitude > 18
+	return (spot - Vector3.new(-0.46 * MAP.LobbyRadius, 0, -0.66 * MAP.LobbyRadius)).Magnitude > 34
 end
 
 -- Un punto al azar dentro de la zona de la comida.
