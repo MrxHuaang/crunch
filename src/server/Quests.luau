@@ -1,12 +1,14 @@
 -- Misiones y premio diario. Todo se decide aquí: progreso, cobros, cambios de misión y fechas.
--- Siempre hay tres misiones activas, sacadas de lo que el jugador puede hacer en su capa.
+-- Siempre hay tres misiones activas, cada una con su papel (ROLES): comer en TU zona, mover el
+-- hormiguero y un reto mejor pagado. Nunca piden comida de capas pasadas: farmear atrás no te hace
+-- avanzar. Al excavar una capa nueva, las misiones de comida se cambian solas por las de la zona nueva.
 -- El progreso llega por el bus de sucesos (Events) y se manda al cliente como mucho dos veces
 -- por segundo; al completar una misión, al momento.
 --
 -- Guardado (profile.data.quests, sobrevive al enjambre):
 --   version = 1
 --   serial  = número que da id a cada misión nueva
---   slots   = { misión, misión, misión }   misión = { id, kind, tier, goal, have, reward, food? }
+--   slots   = { misión, misión, misión }   misión = { id, kind, tier, goal, have, reward, food?, zone?, seen? }
 --   rerolls = { t1, t2, t3 }                os.time() desde el que cada hueco puede cambiar gratis
 --   golden  = { t, ... }                    os.time() de los últimos bocados dorados (máx. 6)
 --   daily   = { day, streak }               día UTC del último premio diario y su casilla (1..7)
@@ -31,14 +33,14 @@ local BUFF_SECONDS = 60
 local BUFF_CHANCE = 0.2
 local GOLDEN_WINDOW = 1800 -- solo hay misión de bocados dorados si has cogido alguno en esta media hora
 
--- Por dificultad: segundos de juego que debería costar y segundos de ingreso que paga.
--- Una misión es un extra de alrededor de un tercio sobre lo que ganas mientras la haces:
--- si paga tanto como jugar, se vuelve la forma principal de ganar comida.
+-- Por dificultad: segundos de juego que debería costar y segundos de ingreso a mano que paga.
+-- Los tres huecos avanzan a la vez mientras juegas, así que cada misión paga ~12-15 % de lo que
+-- ganas mientras la haces y las tres juntas un ~27-35 % de extra (el Reto algo más). Si pagaran tanto
+-- como jugar, serían la forma principal de ganar comida (tools/sim.py, ingreso "misiones").
 local EFFORT = { 120, 210, 300 }
-local PAY = { 35, 70, 110 }
--- Lo que rinde un segundo de juego a mano, medido en mordiscos: entre caminar y cargar,
--- una hormiga saca más o menos un mordisco de valor cada cinco segundos.
-local BITES_PER_SECOND = 0.2
+local PAY = { 14, 26, 45 }
+-- Parte del bucle ideal que saca de verdad quien juega (apuntar, rodeos, comida que se lleva otra)
+local PLAY_EFFICIENCY = 0.6
 
 -- Premio diario: minutos de colonia, minutos de comida x2 y jalea
 local DAILY = {
@@ -51,7 +53,15 @@ local DAILY = {
 	{ minutes = 30, jelly = 2 },
 }
 
-local KINDS = { "eat", "finish", "loads", "buy", "golden", "workers" }
+local KINDS = { "eat", "finish", "loads", "buy", "golden", "workers", "earn", "taste" }
+-- Papel de cada hueco: de qué tipos puede ser, cuál sale si ninguno encaja y con qué dificultades.
+--   1 · Zona: comer la comida de tu capa.   2 · Hormiguero: cargas, comida ganada, obreras.
+--   3 · Reto: más largo y mejor pagado.
+local ROLES = {
+	{ kinds = { "eat", "finish" }, fallback = "eat", tiers = { 1, 1, 2 } },
+	{ kinds = { "loads", "earn", "workers" }, fallback = "earn", tiers = { 1, 2, 2, 3 } },
+	{ kinds = { "buy", "golden", "taste" }, fallback = "earn", tiers = { 2, 3, 3 } },
+}
 local KNOWN = {}
 for _, kind in KINDS do
 	KNOWN[kind] = true
@@ -124,12 +134,15 @@ end
 
 -- Cálculo de rendimiento -------------------------------------------------------------
 
--- Comidas que este jugador puede morder ahora, de sus tres últimas zonas
+local function questZone(stats): number
+	return math.clamp(stats.depth, 1, #Config.Zones)
+end
+
+-- Comidas que este jugador puede morder ahora en la zona de SU capa (las de capas pasadas no cuentan)
 local function edibleFoods(stats)
 	local list = {}
-	local depth = math.clamp(stats.depth, 1, #Config.Zones)
-	local low = math.max(1, depth - 2)
-	for i = (low - 1) * 3 + 1, math.min(depth * 3, #Config.Foods) do
+	local depth = questZone(stats)
+	for i = (depth - 1) * 3 + 1, math.min(depth * 3, #Config.Foods) do
 		local def = Config.Foods[i]
 		if not def.boss and (not def.hard or stats.canBiteHard) then
 			table.insert(list, def)
@@ -138,22 +151,25 @@ local function edibleFoods(stats)
 	return list
 end
 
--- Segundos de ida y vuelta entre el hormiguero y la zona de esa comida. En el jardín la comida
--- cercana está a unos 38 studs (la mitad sale junto a los hormigueros); al túnel se va desde el arco
--- de hormigueros hasta la mitad de la zona.
+-- Segundos de ida y vuelta entre el hormiguero y los racimos de la zona de esa comida (corriendo;
+-- con túnel, desde su salida). Config.zoneDistance mide lo mismo que tools/sim.py.
 local function tripTime(stats, def): number
-	local zone = Config.Zones[def.zone]
-	local distance = if def.zone == 1 then 38 else Config.Map.HillArc + math.abs(zone.z0) + 75
-	return math.clamp(2 * distance / math.max(stats.walkSpeed, 1), 6, 150)
+	local speed = math.max(stats.walkSpeed, 1) * (1 + (Config.Run.Mult - 1) * 0.85)
+	local distance = Config.zoneDistance(def.zone)
+	if stats.hasTunnel and def.zone > 1 then
+		distance = math.min(distance, Config.Map.DepthIn + 15 + speed * (Config.Tunnel.Travel + 0.8))
+	end
+	return math.clamp(2 * distance / speed, 4, 150)
 end
 
--- Trozos por segundo que arranca el jugador de esa comida, contando los viajes a casa.
--- Se le quita un 40 %: nadie juega perfecto.
+-- Trozos por segundo que arranca el jugador de esa comida: el viaje entero (morder hasta llenarse,
+-- saltar de comida en comida dentro del racimo, ir y volver), por PLAY_EFFICIENCY.
 local function eatRate(stats, def): number
-	local perBite = stats.biteDamage * (if def.hard then stats.hardMult else 1)
+	local perBite = stats.biteDamage * (stats.harvest or 1) * (if def.hard then stats.hardMult else 1)
 	local bites = math.ceil(stats.capacity / math.max(perBite, 1))
-	local fill = bites * stats.biteCooldown
-	return stats.capacity / (fill + tripTime(stats, def)) * 0.6
+	local foods = stats.capacity / math.max(def.hp, 1)
+	local fill = bites * stats.biteCooldown + foods * (6 / math.max(stats.walkSpeed, 1) + 0.25) + 1
+	return stats.capacity / (fill + tripTime(stats, def)) * PLAY_EFFICIENCY
 end
 
 local function pickFood(stats, filter: ((any) -> boolean)?)
@@ -161,8 +177,8 @@ local function pickFood(stats, filter: ((any) -> boolean)?)
 	local total = 0
 	local weights = {}
 	for i, def in list do
-		-- Las de la zona más honda salen más a menudo
-		local w = if filter and not filter(def) then 0 else (def.zone - list[1].zone + 1) ^ 2
+		-- Todas son de tu zona; las más grandes (van en orden) salen algo más a menudo
+		local w = if filter and not filter(def) then 0 else i
 		weights[i] = w
 		total += w
 	end
@@ -216,11 +232,6 @@ end
 
 -- Generación -------------------------------------------------------------------------
 
-local function rollTier(): number
-	local roll = rng:NextNumber()
-	return if roll < 0.4 then 1 elseif roll < 0.8 then 2 else 3
-end
-
 -- Rellena meta y comida de una misión del tipo dado. Devuelve nil si no encaja.
 local function build(profile, kind: string, tier: number)
 	local stats = profile.stats
@@ -256,6 +267,20 @@ local function build(profile, kind: string, tier: number)
 		mission.goal = math.clamp(recentGolden(data.quests), 1, tier)
 	elseif kind == "workers" then
 		mission.goal = nice(data.rate * effort)
+	elseif kind == "earn" then
+		-- Comida entregada a mano en el hormiguero, medida con la comida de tu zona
+		local def = pickFood(stats) or Config.Foods[1]
+		local value = (def.value or 1) * (stats.zoneMult[def.zone] or 1) * stats.foodMult
+		mission.goal = nice(math.max(eatRate(stats, def) * value * effort, 10))
+	elseif kind == "taste" then
+		-- Terminar una comida de cada tipo de tu zona: te pasea por la zona entera
+		local list = edibleFoods(stats)
+		if #list < 2 then
+			return nil
+		end
+		mission.zone = questZone(stats)
+		mission.goal = #list
+		mission.seen = {}
 	else
 		return nil
 	end
@@ -263,11 +288,12 @@ local function build(profile, kind: string, tier: number)
 	return mission
 end
 
--- Misión nueva de un tipo distinto a los de `avoid`
-local function generate(profile, avoid: { [string]: boolean })
+-- Misión nueva para el hueco `index`, de su papel y de un tipo distinto a los de `avoid`
+local function generate(profile, avoid: { [string]: boolean }, index: number)
 	local q = profile.data.quests
+	local role = ROLES[index] or ROLES[1]
 	local options = {}
-	for _, kind in KINDS do
+	for _, kind in role.kinds do
 		if not avoid[kind] and eligible(profile, kind) then
 			table.insert(options, kind)
 		end
@@ -277,9 +303,10 @@ local function generate(profile, avoid: { [string]: boolean })
 		local j = rng:NextInteger(1, i)
 		options[i], options[j] = options[j], options[i]
 	end
+	table.insert(options, role.fallback)
 	table.insert(options, "eat")
 	for _, kind in options do
-		local mission = build(profile, kind, rollTier())
+		local mission = build(profile, kind, role.tiers[rng:NextInteger(1, #role.tiers)])
 		if mission then
 			q.serial += 1
 			mission.id = q.serial
@@ -305,9 +332,9 @@ local function replace(profile, index: number, alsoAvoid: string?)
 	if alsoAvoid then
 		avoid[alsoAvoid] = true
 	end
-	local mission = generate(profile, avoid)
+	local mission = generate(profile, avoid, index)
 	if not mission and alsoAvoid then
-		mission = generate(profile, kindsExcept(q, index))
+		mission = generate(profile, kindsExcept(q, index), index)
 	end
 	if mission then
 		q.slots[index] = mission
@@ -331,8 +358,12 @@ local function validSlot(profile, slot): boolean
 	end
 	if slot.kind == "eat" or slot.kind == "finish" then
 		local def = Config.FoodById[slot.food]
-		if not def or def.zone > profile.stats.depth then
-			return false -- p. ej. tras enjambrar la zona vuelve a estar cerrada
+		if not def or def.zone ~= questZone(profile.stats) then
+			return false -- la comida ya no es de tu capa (excavaste, o enjambraste y la zona se cerró)
+		end
+	elseif slot.kind == "taste" then
+		if type(slot.seen) ~= "table" or slot.zone ~= questZone(profile.stats) then
+			return false
 		end
 	end
 	return true
@@ -391,8 +422,10 @@ local function rawFood(profile, seconds: number): number
 	local depth = math.clamp(stats.depth, 1, #Config.Zones)
 	local zoneFood = Config.Foods[(depth - 1) * 3 + 1]
 	-- data.rate ya lleva el multiplicador de comida y addFood lo vuelve a aplicar: se quita aquí
-	local colony = profile.data.rate / math.max(stats.foodMult, 1) * seconds
-	return math.max(math.floor(colony), math.floor(seconds * BITES_PER_SECOND * stats.biteDamage * zoneFood.value))
+	local colony = profile.data.rate / math.max(stats.foodMult, 1e-3) * seconds
+	-- Lo que rinde jugar a mano en la zona de tu capa (sin multiplicadores: addFood los pone)
+	local hand = seconds * eatRate(stats, zoneFood) * zoneFood.value
+	return math.max(math.floor(colony), math.floor(hand))
 end
 
 -- Lo que verá el jugador (sin contar una poción o un hongo activos)
@@ -438,6 +471,11 @@ local function describe(slot): string
 		return if slot.goal == 1 then "Consigue 1 bocado dorado" else "Consigue " .. goal .. " bocados dorados"
 	elseif slot.kind == "workers" then
 		return "Tus obreras traen " .. goal .. " de comida"
+	elseif slot.kind == "earn" then
+		return "Entrega " .. goal .. " de comida a mano"
+	elseif slot.kind == "taste" then
+		local zone = Config.Zones[slot.zone or 1]
+		return "Termina una comida de cada tipo en " .. (if zone then zone.name else "tu zona")
 	end
 	return "Misión"
 end
@@ -562,16 +600,24 @@ local function hookEvents()
 			return
 		end
 		bump(profile, function(slot)
-			return if slot.kind == "finish" and slot.food == def.id then 1 else nil
+			if slot.kind == "finish" and slot.food == def.id then
+				return 1
+			elseif slot.kind == "taste" and def.zone == slot.zone and not def.boss and not slot.seen[def.id] then
+				slot.seen[def.id] = true
+				return 1
+			end
+			return nil
 		end)
 	end)
 
-	Events.on("Deposit", function(profile, _credited, fullLoad)
-		if not fullLoad then
-			return
-		end
+	Events.on("Deposit", function(profile, credited, fullLoad)
 		bump(profile, function(slot)
-			return if slot.kind == "loads" then 1 else nil
+			if slot.kind == "loads" then
+				return if fullLoad then 1 else nil
+			elseif slot.kind == "earn" and type(credited) == "number" and credited > 0 then
+				return credited
+			end
+			return nil
 		end)
 	end)
 
@@ -597,11 +643,17 @@ local function hookEvents()
 		end)
 	end)
 
-	-- Capa nueva: los premios suben de tamaño
+	-- Capa nueva: los premios suben de tamaño y las misiones de comida pasan a la zona nueva
+	-- (ensure rehace las que apuntan a una zona que ya no es la de tu capa). Se espera un momento
+	-- para que las estadísticas ya lleven la capa nueva.
 	Events.on("Dig", function(profile)
-		if runtime[profile] then
+		task.delay(1, function()
+			if not runtime[profile] or Profiles.get(profile.player) ~= profile then
+				return
+			end
+			ensure(profile)
 			sendState(profile)
-		end
+		end)
 	end)
 
 	-- Enjambre: las zonas se cierran otra vez. Lo pendiente se rehace; lo cumplido se respeta.
