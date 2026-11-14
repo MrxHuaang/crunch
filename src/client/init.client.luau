@@ -24,8 +24,9 @@ local Tree = require(script.Tree)
 local Wardrobe = require(script.Wardrobe)
 
 local player = Players.LocalPlayer
-local remotes = ReplicatedStorage:WaitForChild("Remotes")
-local foods = Workspace:WaitForChild("Food")
+-- El servidor tarda unos segundos en levantar el mundo: se espera con margen, sin aviso de espera infinita
+local remotes = ReplicatedStorage:WaitForChild("Remotes", 180) :: Folder
+local foods = Workspace:WaitForChild("Food", 180) :: Instance
 
 player.CameraMaxZoomDistance = 45
 player.CameraMinZoomDistance = 8
