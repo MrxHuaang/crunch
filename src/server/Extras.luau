@@ -278,6 +278,11 @@ local function updateOutpost(profile, s, root: BasePart)
 	if ((o.pos - root.Position) * FLAT).Magnitude > X.Outpost.Radius then
 		return
 	end
+	-- Mismo antitrampas que la entrega en casa: si llegó demasiado rápido, la entrega espera
+	if not PlayerService.canReach(profile, root.Position) then
+		return
+	end
+	PlayerService.moved(profile, root.Position)
 	-- Entregar aquí es como entregar en casa (credit avisa del suceso "Deposit": el buche lo oye)
 	local credited, _, doubled = PlayerService.credit(profile, profile.carry, profile.carryValue)
 	profile.carry = 0

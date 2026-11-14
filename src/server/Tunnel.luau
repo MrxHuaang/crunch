@@ -298,6 +298,11 @@ local function travel(player: Player, from: Vector3, to: Vector3, facing: Vector
 		end
 		local up = Vector3.new(0, 1.5 * character:GetScale() + 1, 0)
 		character:PivotTo(CFrame.lookAt(to + up, to + up + facing))
+		-- El antitrampas de PlayerService mide el siguiente viaje desde la salida del túnel
+		local profile = Profiles.get(player)
+		if profile then
+			profile.anchor = { position = to, at = os.clock() }
+		end
 	end)
 end
 

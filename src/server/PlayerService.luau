@@ -27,6 +27,46 @@ local function getRoot(player: Player): BasePart?
 	return if root and root:IsA("BasePart") then root else nil
 end
 
+-- Antitrampas de teletransporte. La posición la manda el cliente, así que entre un mordisco o una
+-- entrega y la siguiente tiene que haber dado tiempo a recorrer la distancia con turbo (y mucho
+-- margen). También lo usa la entrega del puesto avanzado (Extras), por PlayerService.canReach. Si no, la acción espera: quien se teletransporta no gana nada sobre quien camina, y
+-- nadie es expulsado por un falso positivo. Las alas dan un salto libre por recarga, y el túnel
+-- y el aparecer cuentan como salida desde su destino (profile.anchor).
+local FLAT = Vector3.new(1, 0, 1)
+-- Holgado a propósito (opción ligera): hay velocidades que solo conoce el cliente (regalo del jardín,
+-- saludo, Estampida de la exploradora, Segadora, telaraña, bola de miel) y el turbo con Resuello puede
+-- ir siempre puesto. Corta el teletransporte; un truco de velocidad moderado sigue pasando.
+local TRAVEL_MARGIN = 1.6 -- x turbo por la senda: potenciadores del cliente que el servidor no ve
+local TRAVEL_BURST = 3 -- s extra a esa velocidad: acelerones cortos (Estampida, embestidas)
+local TRAVEL_SLACK = 60 -- studs extra: latencia, saltos, setas y empujones
+
+function PlayerService.moved(profile, position: Vector3)
+	profile.anchor = { position = position, at = os.clock() }
+end
+
+local function canReach(profile, position: Vector3): boolean
+	local anchor = profile.anchor
+	if not anchor then
+		return true
+	end
+	local stats = profile.stats
+	local now = os.clock()
+	-- WalkSpeed (atributo) ya trae pociones, reglas y castas; el cliente le suma correr, turbo y senda
+	local shown = profile.player:GetAttribute("WalkSpeed")
+	local walk = math.max(if type(shown) == "number" then shown else 0, stats.walkSpeed, Config.Player.WalkSpeed)
+	local top = walk * (stats.laneMult or 1) * Config.Sprint.Mult * TRAVEL_MARGIN
+	local allowed = top * (now - anchor.at + TRAVEL_BURST) + TRAVEL_SLACK
+	if ((position - anchor.position) * FLAT).Magnitude <= allowed then
+		return true
+	end
+	if stats.hasWings and now >= (profile.wingsFreeAt or 0) then
+		profile.wingsFreeAt = now + stats.wingsCooldown * 0.8 -- 0.8: la recarga se cuenta en el cliente
+		return true
+	end
+	return false
+end
+PlayerService.canReach = canReach
+
 local function assignAnthill(player: Player): Model?
 	local hills = Workspace:WaitForChild("Anthills"):GetChildren()
 	table.sort(hills, function(a, b)
@@ -113,6 +153,7 @@ local function onCharacter(profile, character: Model)
 	local spawn = profile.hill and profile.hill:FindFirstChild("Spawn")
 	if spawn and spawn:IsA("BasePart") then
 		character:PivotTo(spawn.CFrame + Vector3.new(0, 1.5 * character:GetScale(), 0))
+		PlayerService.moved(profile, spawn.Position)
 	end
 
 	-- Al morir se pierde lo que llevabas encima
@@ -230,6 +271,11 @@ local function onBite(player: Player, food: any)
 		Profiles.say(profile, "¡Está durísima! Necesito la mandíbula sierra", 3)
 		return
 	end
+	-- Después de los descartes de arriba: un mordisco que no cuenta no gasta el salto de las alas
+	if not canReach(profile, root.Position) then
+		return
+	end
+	PlayerService.moved(profile, root.Position)
 
 	-- Racha: morder sin parar pega cada vez más
 	if stats.comboCap > 0 and gap <= Config.Combo.Window then
@@ -396,7 +442,8 @@ local function depositLoop()
 			local stats = profile.stats
 			local center = profile.hill:GetPivot().Position
 			local flat = (center - root.Position) * Vector3.new(1, 0, 1)
-			if flat.Magnitude <= Config.Anthill.DepositRadius * stats.hillScale then
+			if flat.Magnitude <= Config.Anthill.DepositRadius * stats.hillScale and canReach(profile, root.Position) then
+				PlayerService.moved(profile, root.Position)
 				local credited, _, doubled = PlayerService.credit(profile, profile.carry, profile.carryValue)
 				profile.carry = 0
 				profile.carryValue = 0
