@@ -170,8 +170,9 @@ def income():
     # Escarabajo de carga: +40 % de carga por nivel
     cap = math.floor(CAPACITY * CARRY_G ** L["carry"] * 3 ** L["giant"] * (1 + T["carryPct"]) * (1 + 0.4 * L["beetle"]))
     sp = (WALK + L["speed"]) * (1 + T["speedPct"])
+    sp *= 1.35  # correr viene de serie (Config.Run.Mult)
     if L["sprint"]:
-        sp *= 1 + (3 + L["stamina"]) / 12.0
+        sp *= 1 + (2.3 / 1.35 - 1) * (3 + L["stamina"]) / 12.0  # turbo
     crit = 1 + (0.08 * L["crit"] + T["critPct"]) * (2 + L["brutal"])
     combo = 1 + 0.03 * 10 * L["combo"] * 0.7
     gold = 1 + min(GOLD_CAP, T["goldPct"]) * (GOLD_MULT - 1)

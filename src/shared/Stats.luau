@@ -328,9 +328,9 @@ local EFFECT = {
 	carry = function(l)
 		return "Cargas " .. Format.short(Stats.capacity(l, 0)) .. " trozos"
 	end,
-	sprint = has("Sprint listo", "Sin sprint"),
+	sprint = has("Turbo listo", "Solo corres"),
 	stamina = function(l)
-		return "El sprint dura " .. (Config.Sprint.Duration + l) .. " s"
+		return "El turbo dura " .. (Config.Sprint.Duration + l) .. " s"
 	end,
 	wings = has("Vuelas a casa y al túnel", "Vas caminando"),
 	landing = function(l)

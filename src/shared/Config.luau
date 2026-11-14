@@ -27,7 +27,8 @@ Config.Swarm = {
 	MaxOther = 24, -- hormigas dibujadas de cada colonia ajena
 }
 
-Config.Sprint = { Mult = 2, Duration = 3, Cooldown = 12 }
+Config.Run = { Mult = 1.35 } -- correr: de serie, mientras mantienes Shift (o el botón, en táctil)
+Config.Sprint = { Mult = 2.3, Duration = 3, Cooldown = 12 } -- turbo: la mejora del árbol
 Config.Wings = { FlightTime = 1.4, Cooldown = 20 }
 Config.Frenzy = { Mult = 3, Duration = 15, Cooldown = 90 }
 Config.Combo = { Step = 0.03, Window = 1.6 } -- cada mordisco seguido suma un 3 %
@@ -218,8 +219,8 @@ Config.Tree = {
 	-- Patas
 	node("speed", "P", 1, 1, { name = "Paso rápido", desc = "Caminas más rápido.", max = 42, per = 3, cost = 24, growth = 4.8 }),
 	node("carry", "P", 1, 2, { name = "Lomo fuerte", desc = "Cargas más trozos por viaje.", max = 140, per = 10, cost = 10, growth = 1.6, parent = "speed" }),
-	node("sprint", "P", 2, 1, { name = "Sprint", desc = "Una carrera corta al doble de velocidad.", max = 1, cost = 45, growth = 1, parent = "carry", hint = "{tecla} para correr un momento", key = "Shift", button = "Sprint" }),
-	node("stamina", "P", 2, 2, { name = "Resuello", desc = "El sprint dura más.", max = 5, cost = 70, growth = 4, parent = "sprint", icon = "sprint" }),
+	node("sprint", "P", 2, 1, { name = "Turbo", desc = "Un acelerón corto a más del doble de velocidad. Correr normal ya lo tienes.", max = 1, cost = 45, growth = 1, parent = "carry", hint = "{tecla} para meter el turbo", key = "Z", button = "Turbo" }),
+	node("stamina", "P", 2, 2, { name = "Resuello", desc = "El turbo dura más.", max = 5, cost = 70, growth = 4, parent = "sprint", icon = "sprint" }),
 	node("wings", "P", 3, 1, { name = "Alas", desc = "Vuelas a tu hormiguero. Y desde casa, a tu zona más lejana.", max = 1, cost = 170, growth = 1, parent = "stamina", hint = "{tecla} y vuelvo volando a casa. Desde casa, vuelo a mi zona más lejana", key = "R", button = "Volar" }),
 	node("landing", "P", 4, 1, { name = "Vuelo corto", desc = "Las alas se recuperan antes.", max = 5, cost = 45, growth = 4, parent = "wings", icon = "wings" }),
 	node("fullLoad", "P", 5, 1, { name = "Carga completa", desc = "Si entregas con la carga llena, vale más.", max = 5, cost = 40, growth = 5, parent = "landing", icon = "carry" }),

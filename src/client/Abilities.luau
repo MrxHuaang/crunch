@@ -1,5 +1,5 @@
--- Habilidades activas: rastro, sprint, alas, frenesí, pisotón y tirachinas. Cada una tiene tecla y botón,
--- y el botón solo aparece cuando la tienes.
+-- Correr (de serie) y las habilidades activas: rastro, turbo, alas, frenesí, pisotón y tirachinas.
+-- Cada una tiene tecla y botón, y el botón solo aparece cuando la tienes.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -25,6 +25,9 @@ local player = Players.LocalPlayer
 local remotes
 local buttons = {}
 local sprintReadyAt = 0
+local turboUntil = 0
+local shiftHeld = false -- teclado: corres mientras mantienes Shift
+local runLatched = false -- táctil o clic: el botón deja la carrera puesta
 local wingsReadyAt = 0
 local flying = false
 
@@ -46,22 +49,40 @@ local function doTrail()
 	end
 end
 
+-- Correr: el botón la deja puesta o la quita. Con teclado basta mantener Shift.
+local function toggleRun()
+	runLatched = not runLatched
+	Sfx.pop(if runLatched then 1.3 else 0.9)
+end
+
+local function isRunning(): boolean
+	return shiftHeld or runLatched
+end
+
+-- Turbo: un acelerón corto con enfriamiento. La velocidad la aplica el bucle de más abajo.
 local function doSprint()
-	local hum = humanoid()
-	if not hum or os.clock() < sprintReadyAt then
+	if not humanoid() or os.clock() < sprintReadyAt then
 		return
 	end
 	local duration = State.stats().sprintDuration
 	sprintReadyAt = os.clock() + Config.Sprint.Cooldown
-	hum.WalkSpeed = State.num("WalkSpeed") * Config.Sprint.Mult
+	turboUntil = os.clock() + duration
 	Fx.speed(duration)
 	Sfx.pop(1.5)
-	task.delay(duration, function()
-		local later = humanoid()
-		if later then
-			later.WalkSpeed = State.num("WalkSpeed")
-		end
-	end)
+end
+
+-- Velocidad que toca ahora mismo: andar, correr o turbo.
+local function wantedSpeed(): number
+	local walk = State.num("WalkSpeed")
+	if walk <= 0 then
+		walk = Config.Player.WalkSpeed
+	end
+	if os.clock() < turboUntil then
+		return walk * Config.Sprint.Mult
+	elseif isRunning() then
+		return walk * Config.Run.Mult
+	end
+	return walk
 end
 
 local function wingsCooldown(): number
@@ -160,7 +181,10 @@ local LIST = {
 	{ id = "trail", key = Enum.KeyCode.F, keyName = "F", label = "Rastro", run = doTrail, ready = function()
 		return 0
 	end },
-	{ id = "sprint", key = Enum.KeyCode.LeftShift, keyName = "Shift", label = "Sprint", run = doSprint, ready = function()
+	{ id = "run", icon = "speed", key = Enum.KeyCode.LeftShift, keyName = "Shift", label = "Correr", hold = true, run = toggleRun, ready = function()
+		return 0
+	end },
+	{ id = "sprint", key = Enum.KeyCode.Z, keyName = "Z", label = "Turbo", run = doSprint, ready = function()
 		return sprintReadyAt - os.clock()
 	end },
 	{ id = "wings", key = Enum.KeyCode.R, keyName = "R", label = "Volar", run = doWings, ready = function()
@@ -180,6 +204,9 @@ local LIST = {
 -- ¿Puedes usar esta habilidad ahora? Las alas pueden venir del árbol o de un pase,
 -- así que se leen del atributo que manda el servidor.
 local function available(id: string): boolean
+	if id == "run" then
+		return true -- correr viene de serie
+	end
 	return if id == "wings" then State.flag("HasWings") else (State.nodes()[id] or 0) > 0
 end
 
@@ -273,9 +300,30 @@ function Abilities.start(gui: ScreenGui, remoteFolder: Folder)
 		if processed then
 			return
 		end
+		if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
+			shiftHeld = true
+			return
+		end
 		for _, ability in LIST do
-			if input.KeyCode == ability.key and available(ability.id) then
+			if not ability.hold and input.KeyCode == ability.key and available(ability.id) then
 				ability.run()
+			end
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
+			shiftHeld = false
+		end
+	end)
+
+	-- La velocidad se decide aquí y solo aquí: andar, correr o turbo. Se reaplica cada fotograma
+	-- porque el servidor reescribe WalkSpeed al comprar mejoras.
+	RunService.Heartbeat:Connect(function()
+		local hum = humanoid()
+		if hum and not flying then
+			local speed = wantedSpeed()
+			if math.abs(hum.WalkSpeed - speed) > 0.01 then
+				hum.WalkSpeed = speed
 			end
 		end
 	end)
@@ -290,7 +338,8 @@ function Abilities.start(gui: ScreenGui, remoteFolder: Folder)
 				local cooling = left > 0
 				button.wait.Visible = cooling
 				button.icon.ImageTransparency = if cooling then 0.75 else 0
-				button.face.BackgroundColor3 = if cooling then Comic.DirtLight else Comic.Paper
+				local lit = (ability.id == "run" and isRunning()) or (ability.id == "sprint" and os.clock() < turboUntil)
+				button.face.BackgroundColor3 = if cooling then Comic.DirtLight elseif lit then Comic.Yellow else Comic.Paper
 				if cooling then
 					button.wait.Text = tostring(math.ceil(left))
 				end
