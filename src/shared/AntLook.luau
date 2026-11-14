@@ -494,6 +494,16 @@ local function outfitKit(folder: Folder, character: Model, root: BasePart?, armo
 	function k.part(name: string): BasePart?
 		return bodyPart(character, name)
 	end
+	-- Todas las piezas del cuerpo con ese nombre (p. ej. las dos "AntennaTip")
+	function k.parts(name: string): { BasePart }
+		local list = {}
+		for _, part in character:GetChildren() do
+			if part:IsA("BasePart") and part.Name == name then
+				table.insert(list, part)
+			end
+		end
+		return list
+	end
 	function k.add(host: BasePart, name: string, size: Vector3, color: Color3, offset: CFrame, shape: string?)
 		return add(folder, host, name, size, color, offset, shape)
 	end

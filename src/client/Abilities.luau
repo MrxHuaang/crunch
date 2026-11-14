@@ -17,6 +17,11 @@ local Targeting = require(script.Parent.Targeting)
 
 local Abilities = {}
 
+-- Multiplicador de velocidad por fuera (lo sustituye el módulo Extras: senda de feromonas)
+Abilities.speedBoost = function(): number
+	return 1
+end
+
 local HOME_RADIUS = 45 -- desde aquí las alas ya no te llevan a casa, sino a tu zona más lejana
 local FLAT = Vector3.new(1, 0, 1)
 local BUTTON = 52 -- lado de los botones redondos (diseño; ~56 px a 1080 de alto)
@@ -77,6 +82,7 @@ local function wantedSpeed(): number
 	if walk <= 0 then
 		walk = Config.Player.WalkSpeed
 	end
+	walk *= Abilities.speedBoost() -- senda de feromonas (módulo Extras)
 	if os.clock() < turboUntil then
 		return walk * Config.Sprint.Mult
 	elseif isRunning() then
@@ -177,6 +183,14 @@ local function doSling()
 	end
 end
 
+-- Lluvia propia: la decide el servidor (módulo Extras, remoto "Extras")
+local function doRain()
+	local remote = remotes:FindFirstChild("Extras")
+	if remote and remote:IsA("RemoteEvent") and State.now() >= State.num("RainReadyAt") then
+		remote:FireServer("Rain")
+	end
+end
+
 local LIST = {
 	{ id = "trail", key = Enum.KeyCode.F, keyName = "F", label = "Rastro", run = doTrail, ready = function()
 		return 0
@@ -198,6 +212,9 @@ local LIST = {
 	end },
 	{ id = "sling", icon = "speed", key = Enum.KeyCode.C, keyName = "C", label = "Lanzar", run = doSling, ready = function()
 		return State.num("SlingReadyAt") - State.now()
+	end },
+	{ id = "rain", icon = "royalFood", key = Enum.KeyCode.L, keyName = "L", label = "Lluvia", run = doRain, ready = function()
+		return State.num("RainReadyAt") - State.now()
 	end },
 }
 

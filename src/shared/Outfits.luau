@@ -120,6 +120,50 @@ local LIST = {
 		end,
 	},
 	{
+		-- Conjunto con la estela Eléctrica: traje negro con rayo de neón, gafas amarillas y antenas
+		-- con la punta encendida
+		id = "rayo",
+		name = "Rayo",
+		cost = 6e5,
+		slots = { "face", "body" },
+		colors = { rgb(34, 30, 36), rgb(255, 226, 40), rgb(80, 220, 255) },
+		icon = {
+			{ "r", 20, 15, 7, 20, rgb(255, 226, 40), 25 },
+			{ "r", 25, 28, 7, 20, rgb(255, 226, 40), -35 },
+			{ "r", 21, 42, 7, 18, rgb(255, 226, 40), 25 },
+			{ "r", 23, -8, 46, 4, INK },
+			{ "o", 14, -8, 15, 13, rgb(255, 226, 40) },
+			{ "o", 32, -8, 15, 13, rgb(255, 226, 40) },
+		},
+		build = function(k)
+			local black, yellow = rgb(34, 30, 36), rgb(255, 226, 40)
+			coat(k, black)
+			local th, h = k.thorax, k.head
+			if th then
+				-- Rayo en zigzag tumbado sobre el lomo, siguiendo la curva de la chaqueta
+				local points = { V3(0.18, 0.62, -0.35), V3(-0.05, 0.7, -0.05), V3(0.14, 0.69, 0.06), V3(-0.15, 0.62, 0.4) }
+				for i = 1, 3 do
+					k.rod(th, "Bolt", points[i], points[i + 1], 0.14, yellow).Material = Enum.Material.Neon
+				end
+				for i = 2, 3 do
+					k.add(th, "BoltCorner", V3(0.14, 0.14, 0.14), yellow, CF(points[i]), "ball").Material = Enum.Material.Neon
+				end
+			end
+			if h then
+				for _, s in { -1, 1 } do
+					local lens = k.add(h, "Goggle", V3(0.66, 0.7, 0.1), yellow, CF(s * 0.42, 0.3, -1.1), "ball")
+					lens.Material = Enum.Material.Neon
+					lens.Transparency = 0.45
+				end
+				k.add(h, "GoggleStrap", V3(2.36, 0.16, 2), INK, CF(0, 0.32, 0.12), "ball")
+			end
+			-- Puntas de antena encendidas (van soldadas a la punta y siguen a la antena)
+			for _, tip in k.parts("AntennaTip") do
+				k.add(tip, "AntennaCap", V3(0.46, 0.46, 0.46), yellow, CFrame.identity, "ball").Material = Enum.Material.Neon
+			end
+		end,
+	},
+	{
 		-- Chaqueta, cuello, corbata, gafas de pasta y maletín en la pata delantera derecha
 		id = "oficinista",
 		name = "Oficinista",
@@ -163,6 +207,66 @@ local LIST = {
 				k.at(shin, "Briefcase", V3(0.18, 0.5, 0.6), leather, case)
 				k.at(shin, "BriefcaseHandle", V3(0.06, 0.12, 0.26), dark, case * CF(0, 0.31, 0))
 				k.at(shin, "BriefcaseClasp", V3(0.06, 0.1, 0.1), GOLD, case * CF(0.1, 0.13, 0), "ball")
+			end
+		end,
+	},
+	{
+		-- Conjunto con la estela Mágica: tiara con estrella, vestido lila, cuello con destellos, alas
+		-- de hada translúcidas (no sustituyen a las alas de mejora) y varita en la pata delantera izquierda
+		id = "hada",
+		name = "Hada",
+		cost = 9e7,
+		slots = { "head", "body", "back" },
+		top = 1.4,
+		colors = { rgb(200, 160, 255), rgb(255, 130, 210), rgb(200, 240, 255) },
+		icon = {
+			{ "o", -6, 24, 16, 30, rgb(200, 240, 255), -20 },
+			{ "o", 52, 24, 16, 30, rgb(200, 240, 255), 20 },
+			{ "o", 23, 4, 42, 12, rgb(255, 130, 210) },
+			{ "o", 15, 4, 5, 5, WHITE },
+			{ "o", 31, 4, 5, 5, WHITE },
+			{ "d", 23, -12, 14, 14, rgb(255, 130, 210) },
+			{ "r", 44, 44, 3, 22, WHITE, 30 },
+			{ "d", 50, 33, 8, 8, rgb(255, 236, 120) },
+		},
+		build = function(k)
+			local lilac, pink, wing, wing2, starColor = rgb(200, 160, 255), rgb(255, 130, 210), rgb(200, 240, 255), rgb(255, 200, 240), rgb(255, 236, 120)
+			local h, th, back = k.head, k.thorax, k.back
+			if h then
+				-- Tiara detrás de las antenas y estrella de pie sobre la frente
+				k.add(h, "Tiara", V3(1.1, 0.16, 1), GOLD, k.seat * CF(0, 0.06, -0.05), "ball")
+				k.star(h, k.seat * CF(0, 0.3, -0.45), 0.3, pink)
+			end
+			coat(k, lilac)
+			if th then
+				k.add(th, "FairyCollar", V3(1.4, 0.24, 0.9), pink, CF(0, 0.6, -0.32), "ball")
+				for _, p in { V3(0.45, 0.69, -0.3), V3(-0.45, 0.69, -0.3), V3(0, 0.71, -0.5) } do
+					k.add(th, "Sparkle", V3(0.11, 0.11, 0.11), WHITE, CF(p), "ball").Material = Enum.Material.Neon
+				end
+			end
+			if back then
+				-- Dos pares de alas que salen del lomo hacia fuera, arriba y algo atrás
+				for _, s in { -1, 1 } do
+					local base = CF(s * 0.12, 0.42, 0.1) * ANG(0, -s * rad(30), 0)
+					local upper = k.add(back, "FairyWing", V3(0.05, 1, 0.7), wing, base * ANG(0, 0, -s * rad(30)) * CF(0, 0.5, 0), "ball")
+					upper.Transparency = 0.35
+					local lower = k.add(back, "FairyWing", V3(0.05, 0.6, 0.45), wing2, base * ANG(0, 0, -s * rad(65)) * CF(0, 0.3, 0.05), "ball")
+					lower.Transparency = 0.35
+				end
+			end
+			-- Varita cruzando la tibia delantera izquierda, corta y baja (lejos de la cabeza)
+			local shin = k.part("Shin1")
+			if shin then
+				local q = V3(-1.346, -0.619, -1.346)
+				local u = V3(-0.5, 0.866, 0)
+				local top = q + u * 0.7
+				k.rodAt(shin, "Wand", q - u * 0.15, top, 0.1, WHITE)
+				for _, r in { 0, 45 } do
+					local star = k.at(shin, "WandStar", V3(0.34, 0.34, 0.06), starColor, CF(top + u * 0.14) * ANG(0, 0, rad(r)))
+					if star then
+						star.Material = Enum.Material.Neon
+					end
+				end
 			end
 		end,
 	},
@@ -212,6 +316,88 @@ local LIST = {
 			end
 			-- Katana en diagonal sobre la coraza, empuñadura alzada detrás a la derecha
 			sword(k, V3(-0.36, 0.64, -0.25), V3(0.4, 0.76, 0.9), INK, GOLD, wrap, false)
+		end,
+	},
+	{
+		-- Conjunto con la estela Fuego: pelo de llamas y chaqueta de carreras con llamas en el lomo
+		id = "llamas",
+		name = "Llamas",
+		cost = 3e9,
+		slots = { "head", "body" },
+		top = 1.7,
+		colors = { rgb(34, 30, 36), rgb(255, 130, 30), rgb(255, 226, 80) },
+		icon = {
+			{ "o", 13, -6, 10, 18, rgb(220, 40, 30), -18 },
+			{ "o", 33, -6, 10, 18, rgb(220, 40, 30), 18 },
+			{ "o", 23, -12, 14, 24, rgb(255, 130, 30) },
+			{ "o", 23, -8, 7, 14, rgb(255, 226, 80) },
+			{ "o", 14, 30, 8, 24, rgb(255, 130, 30) },
+			{ "o", 23, 30, 8, 26, rgb(255, 226, 80) },
+			{ "o", 32, 30, 8, 24, rgb(255, 130, 30) },
+		},
+		build = function(k)
+			local red, orange, yellow = rgb(220, 40, 30), rgb(255, 130, 30), rgb(255, 226, 80)
+			local h, th = k.head, k.thorax
+			if h then
+				local seat = k.seat
+				-- Llama grande en la coronilla, dos laterales abiertas y un núcleo de neón delante
+				k.add(h, "Flame", V3(0.55, 1, 0.55), orange, seat * CF(0, 0.42, 0.08) * ANG(rad(10), 0, 0), "ball")
+				for _, s in { -1, 1 } do
+					k.add(h, "Flame", V3(0.4, 0.72, 0.4), red, seat * CF(s * 0.32, 0.3, 0.12) * ANG(rad(10), 0, -s * rad(18)), "ball")
+				end
+				k.add(h, "FlameCore", V3(0.3, 0.6, 0.3), yellow, seat * CF(0, 0.36, -0.12), "ball").Material = Enum.Material.Neon
+			end
+			coat(k, rgb(34, 30, 36))
+			if th then
+				-- Tres llamas tumbadas sobre la chaqueta, apuntando atrás
+				for _, x in { -0.25, 0, 0.25 } do
+					local top = 0.24 + 0.41 * math.sqrt(math.max(0, 1 - (x / 0.71) ^ 2 - (0.08 / 0.69) ^ 2))
+					k.add(th, "FlameStripe", V3(0.2, 0.06, 0.55), if x == 0 then yellow else orange, CF(x, top + 0.01, 0.1), "ball")
+				end
+			end
+		end,
+	},
+	{
+		-- Conjunto con la estela Galaxia: tiara con estrella, capa de noche estrellada y un anillo de
+		-- planeta con su luna alrededor del abdomen
+		id = "galactica",
+		name = "Galáctica",
+		cost = 2e10,
+		slots = { "head", "back" },
+		top = 1.45,
+		colors = { rgb(28, 24, 70), rgb(200, 150, 255), rgb(255, 244, 170) },
+		icon = {
+			{ "d", 14, 16, 8, 8, rgb(255, 244, 170) },
+			{ "d", 32, 22, 7, 7, rgb(255, 244, 170) },
+			{ "d", 18, 46, 6, 6, rgb(255, 244, 170) },
+			{ "o", 23, 34, 60, 10, rgb(200, 150, 255), -10 },
+			{ "o", 52, 29, 8, 8, rgb(220, 226, 255) },
+			{ "d", 23, -10, 14, 14, rgb(220, 226, 255) },
+		},
+		build = function(k)
+			local night, silver, star, ringColor = rgb(28, 24, 70), rgb(220, 226, 255), rgb(255, 244, 170), rgb(200, 150, 255)
+			local h, th, a = k.head, k.thorax, k.abdomen
+			if h then
+				k.add(h, "Tiara", V3(1.1, 0.16, 1), silver, k.seat * CF(0, 0.06, -0.05), "ball")
+				k.star(h, k.seat * CF(0, 0.3, -0.45), 0.34, star)
+			end
+			if th then
+				-- Capa como la de enjambre, con tres estrellitas de neón sobre la tela
+				local hinge = CF(0, 0.6, 0) * ANG(-rad(24 + 5.5 * k.belly), 0, 0)
+				k.add(th, "StarCloak", V3(1.5, 0.1, 1.6), night, hinge * CF(0, 0, 0.78), "ball")
+				k.add(th, "CloakClasp", V3(0.3, 0.3, 0.3), silver, hinge, "ball")
+				for _, p in { V3(-0.35, 0.06, 0.55), V3(0.3, 0.06, 0.85), V3(-0.1, 0.055, 1.2) } do
+					k.add(th, "CloakStar", V3(0.12, 0.06, 0.12), star, hinge * CF(p), "ball").Material = Enum.Material.Neon
+				end
+			end
+			if a then
+				-- Anillo de planeta: disco plano mayor que el abdomen (crece con él), algo inclinado
+				local size = a.Size
+				local ring = CF(0, 0, 0.15) * ANG(rad(12), 0, rad(10))
+				k.add(a, "PlanetRing", V3(size.X * 1.7, 0.06, size.Z * 1.6), ringColor, ring, "ball").Transparency = 0.25
+				k.add(a, "PlanetRing", V3(size.X * 1.45, 0.08, size.Z * 1.38), rgb(255, 214, 120), ring, "ball")
+				k.add(a, "Moon", V3(0.3, 0.3, 0.3), silver, ring * CF(size.X * 0.85, 0, 0), "ball").Material = Enum.Material.Neon
+			end
 		end,
 	},
 	{
@@ -374,6 +560,44 @@ local LIST = {
 		end,
 	},
 	{
+		-- Conjunto con la estela Escarcha: corona de cristales de hielo, abrigo con cuello de pelo
+		-- y un copo en el lomo
+		id = "hielo",
+		name = "Hielo",
+		cost = 1e18,
+		slots = { "head", "body" },
+		top = 1.65,
+		colors = { rgb(150, 200, 240), WHITE, rgb(190, 240, 255) },
+		icon = {
+			{ "r", 13, -8, 7, 16, rgb(190, 240, 255), -20 },
+			{ "r", 33, -8, 7, 16, rgb(190, 240, 255), 20 },
+			{ "r", 23, -12, 8, 22, rgb(120, 210, 255) },
+			{ "o", 23, 4, 46, 14, WHITE },
+			{ "d", 23, 32, 12, 12, WHITE },
+			{ "r", 23, 32, 10, 10, WHITE },
+		},
+		build = function(k)
+			local ice, iceDeep = rgb(190, 240, 255), rgb(120, 210, 255)
+			local h, th = k.head, k.thorax
+			if h then
+				-- Cristales en corona por la coronilla y la nuca, inclinados hacia fuera, detrás de las antenas
+				local crystals = { { 0, 0.3, 0.7 }, { 0.3, 0.12, 0.55 }, { -0.3, 0.12, 0.55 }, { 0.42, 0.38, 0.45 }, { -0.42, 0.38, 0.45 } }
+				for i, c in crystals do
+					local x, z, len = c[1], c[2], c[3]
+					local d = math.sqrt(x * x + z * z)
+					local tx, tz = x / d, z / d
+					local cf = k.seat * CF(x, 0.12, z) * ANG(rad(18) * tz, 0, -rad(18) * tx) * CF(0, len / 2, 0) * ANG(0, rad(45), 0)
+					k.add(h, "IceCrystal", V3(0.18, len, 0.18), if i % 2 == 0 then ice else iceDeep, cf).Transparency = 0.2
+				end
+			end
+			coat(k, rgb(150, 200, 240))
+			if th then
+				k.add(th, "FurCollar", V3(1.5, 0.32, 1), WHITE, CF(0, 0.6, -0.32), "ball")
+				k.star(th, k.lay(V3(0, 0.66, 0.2), V3(0, 1, 0.2), 0), 0.3, WHITE)
+			end
+		end,
+	},
+	{
 		-- Gafas de buceo con tubo, botellas en el lomo y aletas en las seis patas
 		id = "buzo",
 		name = "Buzo",
@@ -413,7 +637,7 @@ local LIST = {
 		end,
 	},
 	{
-		-- Sombrero picudo con estrella, barba, capa y bastón con orbe brillante
+		-- Sombrero picudo con estrella, barba, capa y bastón con orbe brillante (conjunto con Mágica)
 		id = "mago",
 		name = "Mago",
 		cost = 2e22,
@@ -466,7 +690,7 @@ local LIST = {
 		end,
 	},
 	{
-		-- Casco blanco con visor que brilla, cuello de traje, mochila y panel en el pecho
+		-- Casco blanco con visor que brilla, cuello de traje, mochila y panel en el pecho (conjunto con Galaxia)
 		id = "astronauta",
 		name = "Astronauta",
 		cost = 1e24,
@@ -507,6 +731,45 @@ local LIST = {
 				for _, s in { -1, 1 } do
 					k.add(back, "Nozzle", V3(0.3, 0.22, 0.22), gray, CF(s * 0.25, 0.45, 0.5) * ANG(0, rad(90), 0), "cyl")
 				end
+			end
+		end,
+	},
+	{
+		-- Conjunto con la estela Neón: cresta de neón, visera de barra, chaqueta negra con dos franjas
+		id = "neonpunk",
+		name = "Neón",
+		cost = 5e24,
+		slots = { "head", "face", "body" },
+		top = 1.45,
+		colors = { rgb(26, 22, 30), rgb(0, 240, 255), rgb(255, 40, 220) },
+		icon = {
+			{ "o", 16, -11, 8, 14, rgb(255, 40, 220) },
+			{ "o", 23, -15, 8, 16, rgb(0, 240, 255) },
+			{ "o", 30, -11, 8, 14, rgb(255, 40, 220) },
+			{ "r", 23, -2, 42, 5, rgb(0, 240, 255) },
+			{ "r", 23, 22, 46, 4, rgb(0, 240, 255) },
+			{ "r", 23, 38, 46, 4, rgb(255, 40, 220) },
+		},
+		build = function(k)
+			local cyan, magenta, black = rgb(0, 240, 255), rgb(255, 40, 220), rgb(26, 22, 30)
+			local h, th = k.head, k.thorax
+			if h then
+				-- Cresta en el centro de la cabeza (las antenas nacen a x ±0,36)
+				local spikes = { { -0.3, 0.22, 0.16, 0.36 }, { -0.05, 0.32, 0.18, 0.5 }, { 0.22, 0.34, 0.18, 0.52 }, { 0.48, 0.26, 0.16, 0.4 } }
+				for i, m in spikes do
+					local part = k.add(h, "Mohawk", V3(m[3], m[4], 0.3), if i % 2 == 1 then magenta else cyan, k.seat * CF(0, m[2], m[1]), "ball")
+					part.Material = Enum.Material.Neon
+				end
+				-- Visera de una sola barra delante de los ojos, con patillas
+				k.add(h, "NeonVisor", V3(1.64, 0.18, 0.12), cyan, CF(0, 0.42, -1.1)).Material = Enum.Material.Neon
+				for _, s in { -1, 1 } do
+					k.add(h, "GlassesArm", V3(0.07, 0.09, 1), black, CF(s * 0.9, 0.42, -0.62) * ANG(0, s * rad(9), 0))
+				end
+			end
+			coat(k, black)
+			if th then
+				k.add(th, "NeonBand", V3(1.4, 0.82, 0.1), cyan, CF(0, 0.24, -0.2), "ball").Material = Enum.Material.Neon
+				k.add(th, "NeonBand", V3(1.36, 0.8, 0.1), magenta, CF(0, 0.24, 0.3), "ball").Material = Enum.Material.Neon
 			end
 		end,
 	},

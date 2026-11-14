@@ -224,11 +224,13 @@ local function burn(profile, food: Model, runId: number)
 		return
 	end
 	local position = food:GetPivot().Position
-	local taken, _, finished = FoodService.damage(food, math.ceil(stats.biteDamage * stats.lensMult))
+	local piece = FoodService.pieceValue(food, def, stats) -- antes de dañarla: puede desaparecer
+	-- Como todo lo que muerde por ti, pega con tu mordida media (Stats.harvest)
+	local taken, _, finished = FoodService.damage(food, math.ceil(stats.biteDamage * (stats.harvest or 1) * stats.lensMult))
 	if taken <= 0 then
 		return
 	end
-	local credited = Profiles.addFood(profile, taken * def.value * stats.zoneMult[def.zone])
+	local credited = Profiles.addFood(profile, taken * piece)
 	Profiles.trackFood(profile, def, taken)
 	Events.fire("Ate", profile, def, taken, false)
 	if finished then
@@ -327,7 +329,7 @@ local function onStomp(profile, s, root: BasePart)
 	table.sort(hit, function(a, b)
 		return a.distance < b.distance
 	end)
-	local damage = stats.biteDamage * A.Stomp.Mult
+	local damage = stats.biteDamage * (stats.harvest or 1) * A.Stomp.Mult -- con tu mordida media (Stats.harvest)
 	local total = 0
 	for _, item in hit do
 		if profile.carry >= stats.capacity then

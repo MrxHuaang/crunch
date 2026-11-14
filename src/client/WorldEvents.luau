@@ -1,11 +1,14 @@
 -- Eventos del servidor en el cliente: tira de aviso con cuenta atrás, migas doradas que caen
 -- y rebotan, y el banquete gigante con su barra compartida. Todo se anima aquí a partir de
--- los tiempos y posiciones que manda el servidor.
+-- los tiempos y posiciones que manda el servidor. Al lado del banquete, un minijuego de
+-- puntería pequeño abajo en el centro: espacio, clic, toque o A cuando la marca está en verde.
 
+local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -57,6 +60,41 @@ local myBites = 0
 local crumbFolder: Model
 local crumbs: { [number]: any } = {}
 
+-- Minijuego del banquete (posiciones en fracción de la barra)
+local HIT_ACTION = "CrunchFeastHit"
+local HIT_PRIORITY = Enum.ContextActionPriority.High.Value + 100
+local SWEEP_BASE = 1.0 -- anchos de barra por segundo
+local SWEEP_STEP = 0.05 -- más rápido por cada punto de racha
+local SWEEP_CAP = 1.6
+local SWEEP_CAP_TOUCH = 1.35 -- en táctil hay más retraso: tope más bajo
+local GREEN_ZONE = 0.26
+local GOLD_ZONE = 0.08
+local HIT_GAP = 0.3 -- igual que el servidor
+local MISS_LOCK = 0.4
+local BONUS_EVERY = 3 -- cada 3 perfectos seguidos, +1 bocado
+local GAME_W, GAME_H = 230, 50
+local SHRINK = 0.15 -- la comida encoge un 15 % a lo largo del banquete
+local TOUCH = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+local gameHolder: Frame
+local gameFit: UIScale
+local gamePunch: UIScale
+local gameLabel: TextLabel
+local streakLabel: TextLabel
+local gameZone: Frame
+local gameMarker: Frame
+local gameOn = false
+local feastCtx = nil -- { center, color, height, kick } del banquete que se está viendo
+local sweep = 0
+local sweepDir = 1
+local zoneCenter = 0.5
+local streak = 0
+local perfectRun = 0
+local lockUntil = 0
+local lastHitAt = 0
+local lastLocalHit = -math.huge
+local hinted = false
+
 local function now(): number
 	return Workspace:GetServerTimeNow()
 end
@@ -100,6 +138,245 @@ end
 
 local function place()
 	holder.Position = UDim2.new(0.5, 0, 0, 6 + CAPTION * fit.Scale)
+end
+
+------------------------------------------------------------------------------------------
+-- Minijuego del banquete: barra corta con zona verde y centro dorado; la marca va y viene
+------------------------------------------------------------------------------------------
+
+local hit: () -> ()
+
+-- Abajo en el centro, por encima de la pista y de los huecos de carga del HUD
+local function placeGame()
+	gameHolder.Position = UDim2.new(0.5, 0, 1, -(12 + 78 * gameFit.Scale))
+end
+
+local function buildGame(gui: ScreenGui)
+	gameHolder = Comic.frame(gui)
+	gameHolder.Name = "FeastGame"
+	gameHolder.AnchorPoint = Vector2.new(0.5, 1)
+	gameHolder.Size = UDim2.fromOffset(GAME_W, GAME_H)
+	gameHolder.Visible = false
+	-- En táctil el widget entero es el botón: nunca menos de 44 px de alto
+	gameFit = Hud.fitScale(gameHolder, GAME_H)
+	gameFit:GetPropertyChangedSignal("Scale"):Connect(placeGame)
+	placeGame()
+
+	local box, face = Comic.box(gameHolder, UDim2.fromScale(1, 1), Comic.Paper, 3)
+	box.Rotation = -1
+	gamePunch = Instance.new("UIScale")
+	gamePunch.Parent = box
+
+	gameLabel = Comic.label(face, "", Comic.Display, 18, Comic.Ink)
+	gameLabel.Position = UDim2.fromOffset(10, 3)
+	gameLabel.Size = UDim2.new(1, -80, 0, 20)
+	gameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	gameLabel.ZIndex = 2
+
+	streakLabel = Comic.label(face, "", Comic.Display, 16, Comic.Red)
+	streakLabel.AnchorPoint = Vector2.new(1, 0)
+	streakLabel.Position = UDim2.new(1, -10, 0, 4)
+	streakLabel.Size = UDim2.fromOffset(70, 18)
+	streakLabel.TextXAlignment = Enum.TextXAlignment.Right
+	streakLabel.ZIndex = 2
+
+	local track = Comic.frame(face, Color3.fromRGB(232, 218, 190))
+	track.Name = "Track"
+	track.Position = UDim2.fromOffset(10, 27)
+	track.Size = UDim2.new(1, -20, 0, 14)
+	track.ZIndex = 2
+	Comic.ink(track, 2, true)
+
+	gameZone = Comic.frame(track, Comic.Green)
+	gameZone.AnchorPoint = Vector2.new(0.5, 0)
+	gameZone.Size = UDim2.fromScale(GREEN_ZONE, 1)
+	gameZone.ZIndex = 3
+	local gold = Comic.frame(gameZone, Comic.Yellow)
+	gold.AnchorPoint = Vector2.new(0.5, 0)
+	gold.Position = UDim2.fromScale(0.5, 0)
+	gold.Size = UDim2.fromScale(GOLD_ZONE / GREEN_ZONE, 1)
+	gold.ZIndex = 4
+
+	gameMarker = Comic.frame(track, Comic.Ink)
+	gameMarker.AnchorPoint = Vector2.new(0.5, 0.5)
+	gameMarker.Size = UDim2.new(0, 4, 1, 10)
+	gameMarker.ZIndex = 5
+
+	-- Botón invisible encima de todo: toque o clic sobre el widget. Responde al bajar el dedo,
+	-- no al soltarlo, para que el tiempo cuente desde el toque.
+	local button = Instance.new("TextButton")
+	button.Name = "Tap"
+	button.BackgroundTransparency = 1
+	button.Text = ""
+	button.Size = UDim2.fromScale(1, 1)
+	button.ZIndex = 10
+	button.Parent = gameHolder
+	button.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			hit()
+		end
+	end)
+end
+
+local function controlsText(): string
+	if TOUCH then
+		return "Toca cuando la marca esté en verde"
+	end
+	if string.find(UserInputService:GetLastInputType().Name, "Gamepad") then
+		return "Pulsa A cuando la marca esté en verde"
+	end
+	return "Pulsa espacio cuando la marca esté en verde"
+end
+
+local function sweepSpeed(): number
+	return math.min(SWEEP_BASE + SWEEP_STEP * streak, if TOUCH then SWEEP_CAP_TOUCH else SWEEP_CAP)
+end
+
+-- La zona salta a otro sitio, lejos de la marca para que no sea un acierto regalado
+local function moveZone()
+	local half = GREEN_ZONE / 2 + 0.02
+	local center = rng:NextNumber(half, 1 - half)
+	for _ = 1, 8 do
+		if math.abs(center - sweep) >= 0.3 then
+			break
+		end
+		center = rng:NextNumber(half, 1 - half)
+	end
+	zoneCenter = center
+	gameZone.Position = UDim2.fromScale(zoneCenter, 0)
+end
+
+local function onHitAction(_: string, state: Enum.UserInputState, _: InputObject): Enum.ContextActionResult
+	if state == Enum.UserInputState.Begin then
+		hit()
+	end
+	return Enum.ContextActionResult.Sink
+end
+
+local function startGame()
+	if gameOn then
+		return
+	end
+	gameOn = true
+	sweep = 0
+	sweepDir = 1
+	streak = 0
+	perfectRun = 0
+	lockUntil = 0
+	moveZone()
+	gameMarker.Position = UDim2.fromScale(sweep, 0.5)
+	gameLabel.Text = if TOUCH then "¡Toca en verde!" else "¡Pulsa en verde!"
+	gameLabel.TextColor3 = Comic.Ink
+	streakLabel.Text = ""
+	gameHolder.Visible = true
+	Comic.punch(gamePunch, 0.6)
+	-- Por encima del salto (espacio, A) y del mordisco normal (clic); el toque va por el widget
+	ContextActionService:BindActionAtPriority(
+		HIT_ACTION,
+		onHitAction,
+		false,
+		HIT_PRIORITY,
+		Enum.KeyCode.Space,
+		Enum.KeyCode.ButtonA,
+		Enum.UserInputType.MouseButton1
+	)
+	if not hinted then
+		hinted = true
+		Bubble.flash(controlsText(), 4)
+	end
+end
+
+local function stopGame()
+	if not gameOn then
+		return
+	end
+	gameOn = false
+	ContextActionService:UnbindAction(HIT_ACTION)
+	gameHolder.Visible = false
+end
+
+local function stepGame(dt: number)
+	if not gameOn then
+		return
+	end
+	sweep += sweepDir * sweepSpeed() * dt
+	if sweep >= 1 then
+		sweep = 2 - sweep
+		sweepDir = -1
+	elseif sweep <= 0 then
+		sweep = -sweep
+		sweepDir = 1
+	end
+	sweep = math.clamp(sweep, 0, 1)
+	gameMarker.Position = UDim2.fromScale(sweep, 0.5)
+	local locked = os.clock() < lockUntil
+	gameZone.BackgroundTransparency = if locked then 0.65 else 0
+end
+
+-- Respuesta en la propia comida: ñam, migajas del lado que mira a tu hormiga, temblor y número
+local function feedback(amount: number)
+	local ctx = feastCtx
+	local root = rootPart()
+	if not ctx or not root then
+		return
+	end
+	local toward = (root.Position - ctx.center) * FLAT
+	local distance = toward.Magnitude
+	local dir = if distance > 0.1 then toward.Unit else Vector3.xAxis
+	local side = ctx.center + dir * math.max(0, math.min(ctx.radius(), distance - 2)) + Vector3.new(0, math.min(ctx.height * 0.5, 7), 0)
+	local big = amount >= 3
+	Sfx.bite(big)
+	Fx.crumbs(side, ctx.color, if big then 6 else 3)
+	Fx.number(side, amount, big, amount >= 4)
+	Fx.nibble(root.Position - dir * 2 + Vector3.new(0, 1, 0))
+	if big then
+		Fx.shake(if amount >= 4 then 0.22 else 0.12)
+	end
+	ctx.wobble(dir, if big then 1 else 0.55)
+end
+
+hit = function()
+	if not gameOn or not feastCtx then
+		return
+	end
+	local t = os.clock()
+	if t < lockUntil or t - lastHitAt < HIT_GAP then
+		return
+	end
+	lastHitAt = t
+	local d = math.abs(sweep - zoneCenter)
+	local amount
+	if d <= GOLD_ZONE / 2 then
+		streak += 1
+		perfectRun += 1
+		amount = if perfectRun % BONUS_EVERY == 0 then 4 else 3
+		gameLabel.Text = if amount >= 4 then "¡Perfecto! +1" else "¡Perfecto!"
+		gameLabel.TextColor3 = Comic.Ink
+		Comic.punch(gamePunch, 1.15)
+	elseif d <= GREEN_ZONE / 2 then
+		perfectRun = 0
+		amount = 1
+		gameLabel.Text = "Bien"
+		gameLabel.TextColor3 = Comic.Ink
+		Comic.punch(gamePunch, 1.06)
+	else
+		streak = 0
+		perfectRun = 0
+		amount = 0
+		lockUntil = t + MISS_LOCK
+		gameLabel.Text = "Fallo"
+		gameLabel.TextColor3 = Comic.Red
+		Comic.punch(gamePunch, 0.92)
+	end
+	streakLabel.Text = if streak >= 2 then "Racha " .. streak else ""
+	remote:FireServer("FeastHit", amount)
+	if amount > 0 then
+		lastLocalHit = t
+		feedback(amount)
+	else
+		Sfx.pop(0.6)
+	end
+	moveZone()
 end
 
 local function buildStrip()
@@ -175,6 +452,8 @@ local function buildStrip()
 	pillLimit.Parent = pill
 	pillPunch = Instance.new("UIScale")
 	pillPunch.Parent = pill
+
+	buildGame(gui)
 end
 
 local function slideIn()
@@ -219,7 +498,7 @@ local function refreshStrip()
 		if info.kind == "rain" then
 			sub.Text = "Pisa las migas doradas · llevas " .. myCrumbs .. " · " .. left .. " s"
 		else
-			sub.Text = "Ponte al lado y come · tus bocados: " .. myBites .. " · " .. left .. " s"
+			sub.Text = "Acércate y pulsa a tiempo · bocados: " .. myBites .. " · " .. left .. " s"
 		end
 		pillText = info.name .. " · " .. left .. " s · " .. count .. (if info.kind == "rain" then " migas" else " ñam")
 		if count > pillCount and pill.Visible then
@@ -412,28 +691,143 @@ local function watchFeast(feast)
 	fill.Size = UDim2.fromScale(1, 1)
 
 	local total = model:GetAttribute("Total") or 1
+	local height = 12
+	local reach = (feast.radius or 20) + (feast.reach or 8)
+	local shownLeft = model:GetAttribute("Left") or total
 	local function update()
 		local left = model:GetAttribute("Left") or total
 		fill.Size = UDim2.fromScale(math.clamp(left / total, 0, 1), 1)
 		label.Text = if left > 0 then "Quedan " .. left .. " bocados" else "¡Ni las migas!"
+		-- Remate: el último bocado
+		if left <= 0 and shownLeft > 0 and nearCamera(home.Position, 200) then
+			local top = home.Position + Vector3.new(0, height * 0.6, 0)
+			Fx.burst(top, "¡Ni las migas!", Comic.Yellow, 300)
+			Fx.crumbs(top, model:GetAttribute("Color"), 12)
+			Sfx.bite(true)
+			local root = rootPart()
+			if root and ((root.Position - home.Position) * FLAT).Magnitude < 90 then
+				Fx.shake(0.35)
+			end
+		end
+		shownLeft = left
 	end
 	update()
 	table.insert(connections, model:GetAttributeChangedSignal("Left"):Connect(update))
 
-	-- Tus bocados: cada uno, un ñam junto a ti
+	-- Tus bocados. Los del minijuego ya se celebraron al pulsar; los pasivos (de pie al lado
+	-- sin jugar) llevan un ñam pequeño junto a ti.
 	local key = "B_" .. player.UserId
 	table.insert(connections, model:GetAttributeChangedSignal(key):Connect(function()
 		local count = model:GetAttribute(key) or 0
 		if count > myBites then
 			myBites = count
-			local root = rootPart()
-			if root then
-				local toward = ((home.Position - root.Position) * FLAT)
-				local nudge = if toward.Magnitude > 0.1 then toward.Unit * 2 else Vector3.zero
-				Fx.nibble(root.Position + nudge + Vector3.new(0, 1, 0))
+			if os.clock() - lastLocalHit > 1 then
+				local root = rootPart()
+				if root then
+					local toward = ((home.Position - root.Position) * FLAT)
+					local nudge = if toward.Magnitude > 0.1 then toward.Unit * 2 else Vector3.zero
+					Fx.nibble(root.Position + nudge + Vector3.new(0, 1, 0))
+				end
+				Sfx.bite(false)
 			end
-			Sfx.bite(false)
 		end
+	end))
+
+	-- Aspecto local de la comida: encoge un poco según el bote y tiembla con cada golpe.
+	-- Tras aterrizar el servidor ya no toca las piezas (solo las quita), así que aquí se
+	-- reescriben tamaño y posición de cada una a partir de una foto inicial.
+	local treat = {
+		parts = {},
+		base = nil :: CFrame?,
+		applied = 1,
+		written = 1,
+		tilted = false,
+		wobbleAt = -math.huge,
+		axis = Vector3.xAxis,
+		kick = 0,
+	}
+	local function captureTreat()
+		local base = model:GetPivot()
+		treat.base = base
+		for _, child in model:GetChildren() do
+			if child:IsA("BasePart") and child.Name == "Piece" then
+				table.insert(treat.parts, { part = child, rel = base:ToObjectSpace(child.CFrame), size = child.Size })
+			end
+		end
+	end
+	local function applyTreat(s: number, tilt: number)
+		local base = treat.base :: CFrame
+		local frame = CFrame.new(base.Position) * CFrame.fromAxisAngle(treat.axis, tilt) * base.Rotation
+		for _, entry in treat.parts do
+			local part = entry.part
+			if part.Parent == model then
+				part.Size = entry.size * s
+				part.CFrame = frame * CFrame.new(entry.rel.Position * s) * entry.rel.Rotation
+			end
+		end
+	end
+	local function stepTreat(dt: number)
+		if not treat.base then
+			if now() < landAt + 0.5 then
+				return
+			end
+			captureTreat()
+		end
+		local left = model:GetAttribute("Left") or total
+		local target = 1 - SHRINK * (1 - math.clamp(left / total, 0, 1))
+		treat.applied += (target - treat.applied) * math.min(1, dt * 4)
+		local t = os.clock() - treat.wobbleAt
+		local wobbling = t < 0.6
+		local tilt, squish = 0, 0
+		if wobbling then
+			local k = math.exp(-t * 7) * treat.kick
+			tilt = 0.05 * k * math.sin(t * 28)
+			squish = 0.03 * k * math.sin(t * 28 + 1)
+		end
+		local s = treat.applied * (1 + squish)
+		if wobbling or treat.tilted or math.abs(s - treat.written) > 0.002 then
+			applyTreat(s, tilt)
+			treat.written = s
+			treat.tilted = wobbling
+		end
+	end
+
+	feastCtx = {
+		center = home.Position,
+		color = model:GetAttribute("Color"),
+		height = height,
+		radius = function(): number
+			return (feast.radius or 20) * treat.applied * 0.85
+		end,
+		wobble = function(dir: Vector3, strength: number)
+			treat.wobbleAt = os.clock()
+			treat.axis = Vector3.yAxis:Cross(dir).Unit
+			treat.kick = strength
+		end,
+	}
+	hinted = false
+
+	-- Cada fotograma: ¿estás al alcance con el banquete vivo? Entonces el minijuego.
+	local function inReach(): boolean
+		local root = rootPart()
+		if not root then
+			return false
+		end
+		local offset = root.Position - home.Position
+		return (offset * FLAT).Magnitude <= reach and math.abs(offset.Y) < 40
+	end
+	table.insert(connections, RunService.RenderStepped:Connect(function(dt)
+		if not model.Parent then
+			return
+		end
+		stepTreat(dt)
+		local live = phase == "live" and info == feast and now() >= landAt and (model:GetAttribute("Left") or 0) > 0
+		if live and inReach() then
+			startGame()
+		else
+			stopGame()
+		end
+		stepGame(dt)
 	end))
 
 	-- Cada pieza que pierde sale volando (física local, nada en el servidor)
@@ -447,7 +841,10 @@ local function watchFeast(feast)
 		local ok, size = pcall(function()
 			return model:GetExtentsSize()
 		end)
-		local height = if ok then size.Y else 20
+		height = if ok then size.Y else 20
+		if feastCtx then
+			feastCtx.height = height
+		end
 		anchor.Position = home.Position + Vector3.new(0, height + 5, 0)
 	end
 
@@ -493,6 +890,8 @@ local function watchFeast(feast)
 	for _, connection in connections do
 		connection:Disconnect()
 	end
+	stopGame()
+	feastCtx = nil
 	anchor:Destroy()
 end
 
