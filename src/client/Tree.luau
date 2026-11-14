@@ -894,7 +894,7 @@ function Tree.refresh(): boolean
 				desc = "La colonia vuela a fundar un hormiguero nuevo. Pierdes comida, obreras, cámaras y capas. Te quedas la jalea, los trofeos y la ropa.",
 				effect = if gain >= 1
 					then "Ahora ganarías " .. Format.short(gain) .. " de jalea." .. (if State.flag("TartaDone") then "" else "\nCon la tarta comida, el doble.")
-					else "Todavía no has reunido comida para una gota de jalea. Sigue hasta la zona 5 o 6.",
+					else "Todavía no has reunido comida para una gota de jalea. Sigue hasta la zona 7.",
 				buyText = if gain >= 1 then "Enjambrar ya" else nil,
 				canBuy = true,
 			})
