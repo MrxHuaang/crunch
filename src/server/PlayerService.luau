@@ -87,7 +87,9 @@ local function updateCarryVisual(profile)
 	end
 
 	local scale = character:GetScale()
-	local side = (0.7 + 1.3 * math.clamp(profile.carry / profile.stats.capacity, 0, 1)) * scale
+	-- Lo que no te cabe a ti lo lleva el escarabajo de carga (lo dibuja el cliente)
+	local own = profile.stats.ownCapacity or profile.stats.capacity
+	local side = (0.7 + 1.3 * math.clamp(profile.carry / own, 0, 1)) * scale
 	local chunkPart = chunk :: Part
 	chunkPart.Color = profile.carryColor
 	chunkPart.Size = Vector3.new(side, side, side)
@@ -271,31 +273,73 @@ local function onBite(player: Player, food: any)
 			end
 		end
 		for _, other in nearby do
-			local left = stats.capacity - profile.carry
-			if left <= 0 then
+			if profile.carry >= stats.capacity then
 				break
 			end
-			local otherDef = FoodService.defOf(other)
-			if otherDef.zone > stats.depth or (otherDef.hard and not stats.canBiteHard) then
-				continue
-			end
-			local extra, _, done = FoodService.damage(other, math.min(math.ceil(damage * 0.5), left))
-			profile.carry += extra
-			profile.carryValue += extra * otherDef.value * stats.zoneMult[otherDef.zone] * worth
-			Profiles.trackFood(profile, otherDef, extra)
-			if extra > 0 then
-				Events.fire("Ate", profile, otherDef, extra, false)
-			end
-			if done then
-				Profiles.awardTrophy(profile, otherDef)
-				Events.fire("Finished", profile, otherDef)
-			end
+			PlayerService.take(profile, other, math.ceil(damage * 0.5), worth)
 		end
 	end
+
+	-- Para las aliadas (escolta, mega crunch): qué mordiste y si fue seguido
+	Events.fire("Bite", profile, food, gap <= Config.Combo.Window)
 
 	Profiles.push(profile)
 	updateCarryVisual(profile)
 	fxRemote:FireClient(player, "Bite", position, taken, finished, crit, profile.combo, golden)
+end
+
+-- Arranca hasta `amount` de vida de una comida y lo mete en tu carga, si cabe. Comprueba la puerta
+-- de su zona y la comida dura. La usan la mordida en área y las aliadas. Devuelve (trozos, si se acabó).
+function PlayerService.take(profile, food: Model, amount: number, worth: number?): (number, boolean)
+	local stats = profile.stats
+	local space = stats.capacity - profile.carry
+	if space <= 0 or amount <= 0 or not FoodService.isFood(food) then
+		return 0, false
+	end
+	local def = FoodService.defOf(food)
+	if def.zone > stats.depth or (def.hard and not stats.canBiteHard) then
+		return 0, false
+	end
+	local color = food:GetAttribute("Color")
+	local taken, _, finished = FoodService.damage(food, math.min(math.ceil(amount), space))
+	if taken > 0 then
+		profile.carry += taken
+		profile.carryValue += taken * def.value * stats.zoneMult[def.zone] * (worth or 1)
+		if typeof(color) == "Color3" then
+			profile.carryColor = color
+		end
+		Profiles.trackFood(profile, def, taken)
+		Events.fire("Ate", profile, def, taken, false)
+	end
+	if finished then
+		Profiles.awardTrophy(profile, def)
+		Events.fire("Finished", profile, def)
+	end
+	return taken, finished
+end
+
+-- Tras cambiar la carga desde fuera (abeja, tirachinas, imán): atributos y trozo entre las mandíbulas.
+function PlayerService.refreshCarry(profile)
+	Profiles.push(profile)
+	updateCarryVisual(profile)
+end
+
+-- Lo que vale entregar una carga: la misma cuenta a pie, con la abeja o con el tirachinas.
+-- Acredita la comida y avisa del suceso "Deposit". Devuelve (acreditado, carga llena, doble).
+function PlayerService.credit(profile, carry: number, carryValue: number): (number, boolean, boolean)
+	local stats = profile.stats
+	local value = carryValue * stats.depositMult
+	local full = carry >= stats.capacity
+	if full then
+		value *= 1 + stats.fullLoadBonus
+	end
+	local doubled = rng:NextNumber() < stats.doubleChance
+	if doubled then
+		value *= 2
+	end
+	local credited = Profiles.addFood(profile, value)
+	Events.fire("Deposit", profile, credited, full)
+	return credited, full, doubled
 end
 
 local function depositLoop()
@@ -313,22 +357,12 @@ local function depositLoop()
 			local center = profile.hill:GetPivot().Position
 			local flat = (center - root.Position) * Vector3.new(1, 0, 1)
 			if flat.Magnitude <= Config.Anthill.DepositRadius * stats.hillScale then
-				local value = profile.carryValue * stats.depositMult
-				local full = profile.carry >= stats.capacity
-				if full then
-					value *= 1 + stats.fullLoadBonus
-				end
-				local doubled = rng:NextNumber() < stats.doubleChance
-				if doubled then
-					value *= 2
-				end
-				local credited = Profiles.addFood(profile, value)
+				local credited, _, doubled = PlayerService.credit(profile, profile.carry, profile.carryValue)
 				profile.carry = 0
 				profile.carryValue = 0
 				Profiles.push(profile)
 				updateCarryVisual(profile)
 				fxRemote:FireClient(player, "Deposit", center + Vector3.new(0, 9 * stats.hillScale, 0), credited, doubled)
-				Events.fire("Deposit", profile, credited, full)
 			end
 		end
 	end

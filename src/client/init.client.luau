@@ -51,7 +51,7 @@ Abilities.start(hud, remotes)
 
 -- Módulos opcionales: cada uno trae su propia interfaz y se arranca solo si existe.
 -- Un fallo en uno no debe tumbar el resto del juego.
-for _, name in { "Life", "Ambience", "Quests", "WorldEvents", "Pets", "Hazards" } do
+for _, name in { "Life", "Ambience", "Quests", "WorldEvents", "Pets", "Hazards", "Allies" } do
 	local module = script:FindFirstChild(name)
 	if module then
 		local ok, lib = pcall(require, module)

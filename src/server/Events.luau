@@ -9,6 +9,7 @@
 --   "Dig"      (profile, depth)                   capa nueva
 --   "Rebirth"  (profile, jelly)                   enjambre
 --   "Golden"   (profile)                          bocado dorado
+--   "Bite"     (profile, food, chained)           mordisco tuyo acertado (chained: seguido del anterior)
 
 local Events = {}
 
