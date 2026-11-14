@@ -38,6 +38,7 @@ function Data.default()
 		skin = "rojo",
 		hat = "ninguno",
 		trail = "sin",
+		outfit = "ninguno", -- traje del vestidor (ver Shared/Outfits)
 		runFood = 0, -- comida ganada en esta partida (decide la Jalea)
 		totalFood = 0,
 		jelly = 0,

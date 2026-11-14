@@ -99,7 +99,9 @@ function Profiles.applyLook(profile, force: boolean?)
 	local data = profile.data
 	local look = Stats.look(data.nodes, data.royal, data.depth, data.rebirths, data.skin, data.hat)
 	look.wings = look.wings or profile.passes.goldWings == true
+	look.outfit = data.outfit
 	local key = table.concat({ data.trail, look.skin, look.hat, look.jaws, tostring(look.saw), look.spikes, look.belly, look.shoes, tostring(look.wings), look.armor, math.min(look.crown, 5), look.scale }, "|")
+	key ..= "|" .. tostring(look.outfit)
 	if not force and key == profile.lookKey then
 		return
 	end
@@ -214,6 +216,7 @@ function Profiles.refresh(profile)
 	player:SetAttribute("Skin", data.skin)
 	player:SetAttribute("Hat", data.hat)
 	player:SetAttribute("Trail", data.trail)
+	player:SetAttribute("Outfit", data.outfit)
 	player:SetAttribute("JellyMult", profile.stats.jellyMult)
 	player:SetAttribute("HasWings", profile.stats.hasWings)
 	player:SetAttribute("WingsCooldown", profile.stats.wingsCooldown)

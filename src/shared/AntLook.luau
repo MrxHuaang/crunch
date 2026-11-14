@@ -7,12 +7,14 @@
 -- jorobas, abdomen + cola + punta. Púas, placas y rayas siguen la silueta real de cada segmento.
 
 local AntModel = require(script.Parent.AntModel)
+local Outfits = require(script.Parent.Outfits)
 
 local AntLook = {}
 
 export type Look = {
 	skin: string?,
 	hat: string?,
+	outfit: string?,
 	jaws: number?,
 	saw: boolean?,
 	spikes: number?,
@@ -336,11 +338,11 @@ local function addStripes(folder: Folder, abdomen: BasePart, belly: number, colo
 	end
 end
 
-local function addSpikes(folder: Folder, character: Model, n: number, color: Color3, skipHead: boolean)
+local function addSpikes(folder: Folder, character: Model, n: number, color: Color3, skipHead: boolean, skipThorax: boolean)
 	for i = 1, math.min(#SPIKES, n * 2) do
 		local spec = SPIKES[i]
 		local host = bodyPart(character, spec[1])
-		if host and not (skipHead and spec[1] == "Head") then
+		if host and not (skipHead and spec[1] == "Head") and not (skipThorax and spec[1] == "Thorax") then
 			local h, w = (0.4 + 0.13 * n) * spec[3], (0.24 + 0.05 * n) * spec[3]
 			-- Medio elipsoide enterrado: asoma una púa redondeada, algo peinada hacia atrás
 			add(folder, host, "Spike", V3(w, h * 2, w), color, onTop(host, spec[2]) * ANG(rad(12), 0, 0), "ball")
@@ -348,11 +350,12 @@ local function addSpikes(folder: Folder, character: Model, n: number, color: Col
 	end
 end
 
-local function addArmor(folder: Folder, character: Model, n: number)
+-- skipThorax: un traje cubre el tórax y va por encima; solo quedan las placas del abdomen
+local function addArmor(folder: Folder, character: Model, n: number, skipThorax: boolean)
 	local thorax = bodyPart(character, "Thorax")
 	local back = bodyPart(character, "ThoraxBack")
 	local abdomen = bodyPart(character, "Abdomen")
-	if thorax then
+	if thorax and not skipThorax then
 		add(folder, thorax, "Plate", V3(1.42, 0.72, 1.36), STEEL, CF(0, 0.3, 0), "ball")
 		if back then
 			add(folder, back, "Plate", V3(1.1, 0.56, 1), STEEL, CF(0, 0.22, 0), "ball")
@@ -455,10 +458,113 @@ local function addHat(folder: Folder, head: BasePart, hat: string)
 	end
 end
 
+-- Kit que reciben los trajes (Outfits.build). Además de `add` en el espacio de cada pieza, sabe
+-- colocar en el espacio de la raíz en reposo (`at`): recorre las uniones desde la pieza hasta la
+-- raíz, así un objeto pensado en coordenadas del cuerpo se suelda a una tibia y la sigue al andar.
+local function outfitKit(folder: Folder, character: Model, root: BasePart?, armor: number, belly: number)
+	local joints = {}
+	for _, d in character:GetDescendants() do
+		if d:IsA("JointInstance") and d.Part1 then
+			joints[d.Part1] = d
+		end
+	end
+	local function rest(part: BasePart, depth: number?): CFrame?
+		if part == root then
+			return CFrame.identity
+		end
+		local j = joints[part]
+		if not j or not j.Part0 or (depth or 0) > 12 then
+			return nil
+		end
+		local parent = rest(j.Part0, (depth or 0) + 1)
+		return if parent then parent * j.C0 * j.C1:Inverse() else nil
+	end
+
+	local k: any = {
+		head = bodyPart(character, "Head"),
+		thorax = bodyPart(character, "Thorax"),
+		back = bodyPart(character, "ThoraxBack"),
+		abdomen = bodyPart(character, "Abdomen"),
+		root = root,
+		seat = HAT_SEAT,
+		armor = armor,
+		belly = belly,
+		shoes = {},
+	}
+	function k.part(name: string): BasePart?
+		return bodyPart(character, name)
+	end
+	function k.add(host: BasePart, name: string, size: Vector3, color: Color3, offset: CFrame, shape: string?)
+		return add(folder, host, name, size, color, offset, shape)
+	end
+	-- Igual que add, pero `cf` está en el espacio de la raíz con el cuerpo en reposo
+	function k.at(host: BasePart, name: string, size: Vector3, color: Color3, cf: CFrame, shape: string?)
+		local hostRest = rest(host)
+		if not hostRest then
+			return nil
+		end
+		return add(folder, host, name, size, color, hostRest:Inverse() * cf, shape)
+	end
+	local function rodFrame(a: Vector3, b: Vector3): CFrame
+		-- lookAt pone -Z hacia b; girar 90° en Y lleva el eje X del cilindro a esa dirección
+		return CFrame.lookAt((a + b) / 2, b) * ANG(0, rad(90), 0)
+	end
+	-- Cilindro de `a` a `b` (espacio de host)
+	function k.rod(host: BasePart, name: string, a: Vector3, b: Vector3, dia: number, color: Color3)
+		return add(folder, host, name, V3((b - a).Magnitude, dia, dia), color, rodFrame(a, b), "cyl")
+	end
+	-- Cilindro de `a` a `b` (espacio de la raíz en reposo)
+	function k.rodAt(host: BasePart, name: string, a: Vector3, b: Vector3, dia: number, color: Color3)
+		return k.at(host, name, V3((b - a).Magnitude, dia, dia), color, rodFrame(a, b), "cyl")
+	end
+	-- Disco con su eje en `dir`
+	function k.disc(host: BasePart, name: string, center: Vector3, dir: Vector3, dia: number, thick: number, color: Color3)
+		return add(folder, host, name, V3(thick, dia, dia), color, rodFrame(center - dir, center + dir), "cyl")
+	end
+	-- Estrella de ocho puntas en el plano XY de `cf` (dos cuadrados girados 45°)
+	function k.star(host: BasePart, cf: CFrame, size: number, color: Color3)
+		add(folder, host, "Star", V3(size, size, 0.05), color, cf)
+		add(folder, host, "Star", V3(size, size, 0.05), color, cf * ANG(0, 0, rad(45)))
+	end
+	-- Marco tumbado sobre una superficie: -Z sigue la normal `n`, luego gira `spin` sobre ella
+	function k.lay(pos: Vector3, n: Vector3, spin: number?): CFrame
+		local up = if math.abs(n.Unit.Y) > 0.9 then V3(0, 0, -1) else Vector3.yAxis
+		return CFrame.lookAt(pos, pos + n, up) * ANG(0, 0, spin or 0)
+	end
+	function k.span(host: BasePart): (number, number)
+		return span(outline(host))
+	end
+	function k.section(host: BasePart, z: number): (number, number, number)
+		return sectionAt(outline(host), z)
+	end
+	-- Zapatos con su número de pata (1-2 delanteras, 3-4 medias, 5-6 traseras) y lado
+	for _, part in character:GetChildren() do
+		local j = part:IsA("BasePart") and part.Name == "Shoe" and joints[part]
+		local shin = j and j.Part0
+		if shin then
+			local index = tonumber(shin.Name:match("^Shin(%d)$")) or 0
+			local at = rest(part)
+			table.insert(k.shoes, { part = part, index = index, side = if at and at.X < 0 then -1 else 1 })
+		end
+	end
+	return k
+end
+
 function AntLook.apply(character: Model, look: Look?)
 	local l: any = look or {}
 	local skin = AntLook.Skins[l.skin] or AntLook.Skins.rojo
 	local hat: string = if table.find(AntLook.Hats, l.hat) then l.hat else "ninguno"
+	-- Traje: el sombrero que tapa no se dibuja (ver la regla en Outfits)
+	local outfit = Outfits.byId[l.outfit]
+	if outfit and not outfit.build then
+		outfit = nil
+	end
+	local function covers(slot: string): boolean
+		return outfit ~= nil and outfit.covers[slot] == true
+	end
+	if outfit and Outfits.hidesHat(outfit.id, hat) then
+		hat = "ninguno"
+	end
 	local jaws, spikes, belly = level(l.jaws, 6), level(l.spikes, 5), level(l.belly, 6)
 	local shoes, armor, crown = level(l.shoes, 6), level(l.armor, 5), level(l.crown, math.huge)
 	local scale = math.clamp(tonumber(l.scale) or 1, 1, 2)
@@ -509,10 +615,10 @@ function AntLook.apply(character: Model, look: Look?)
 		addStripes(folder, abdomen, belly, skin.ink or skin.dark:Lerp(Color3.new(0, 0, 0), 0.45))
 	end
 	if armor > 0 then
-		addArmor(folder, character, armor)
+		addArmor(folder, character, armor, covers("body"))
 	end
 	if spikes > 0 then
-		addSpikes(folder, character, spikes, ink, HAT_COVERS[hat] == true)
+		addSpikes(folder, character, spikes, ink, HAT_COVERS[hat] == true or covers("head"), covers("body"))
 	end
 	if shoes > 0 then
 		dressShoes(folder, character, shoes)
@@ -520,17 +626,29 @@ function AntLook.apply(character: Model, look: Look?)
 	if thorax and l.wings == true then
 		addWings(folder, thorax, belly)
 	end
-	if thorax and crown >= 5 then
+	if thorax and crown >= 5 and not covers("back") then
 		-- Capa corta: sale de la nuca (lomo de la joroba delantera) y se levanta más cuanto mayor es
 		-- el abdomen, para no atravesarlo
 		local hinge = CF(0, 0.6, 0) * ANG(-rad(24 + 5.5 * belly), 0, 0)
 		add(folder, thorax, "Cape", V3(1.3, 0.08, 1.3), RED, hinge * CF(0, 0, 0.65))
 		add(folder, thorax, "CapeClasp", V3(0.3, 0.3, 0.3), GOLD, hinge, "ball")
 	end
+	if outfit then
+		-- Un fallo en un traje no debe dejar a la hormiga a medio vestir
+		local ok, err = pcall(outfit.build, outfitKit(folder, character, root, armor, belly))
+		if not ok then
+			warn("[CRUNCH!] Traje " .. outfit.id .. ":", err)
+		end
+	end
 	if head then
 		addHat(folder, head, hat)
 		if crown >= 1 and hat ~= "corona" then
-			addCrown(folder, head, CF(0, (HAT_TOP[hat] or HEAD_TOP) + 0.5, 0.25), 0.3, 0.22, false)
+			-- La corona de enjambre flota siempre por encima de lo que lleve en la cabeza
+			local top = HAT_TOP[hat] or HEAD_TOP
+			if covers("head") then
+				top = math.max(top, outfit.top or HEAD_TOP)
+			end
+			addCrown(folder, head, CF(0, top + 0.5, 0.25), 0.3, 0.22, false)
 		end
 	end
 	folder.Parent = character

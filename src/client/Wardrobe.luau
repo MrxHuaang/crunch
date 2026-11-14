@@ -1,6 +1,7 @@
 -- Vestidor: un panel pegado al borde derecho, para que tu propia hormiga (a la izquierda) sea
--- el probador. Tres baldas, cada una con su forma: botes de pintura para el color, etiquetas
--- colgadas de una barra para los sombreros y cintas pintadas para las estelas.
+-- el probador. Cuatro baldas, cada una con su forma: botes de pintura para el color, etiquetas
+-- colgadas de una barra para los sombreros, cintas pintadas para las estelas y perchas con la
+-- silueta de cada traje.
 -- Se compra con comida una vez y es para siempre; ponérselo luego es gratis.
 
 local Players = game:GetService("Players")
@@ -11,6 +12,7 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Format = require(ReplicatedStorage.Shared.Format)
+local Outfits = require(ReplicatedStorage.Shared.Outfits)
 local Comic = require(script.Parent.Comic)
 local Sfx = require(script.Parent.Sfx)
 local State = require(script.Parent.State)
@@ -35,8 +37,9 @@ local isOpen = false
 local views = {} -- { kind, def, base, stroke, chip, scale, holder, dimmed }
 
 -- Qué lleva puesto, con el valor por defecto mientras los atributos aún no han llegado
-local ATTRIBUTE = { skin = "Skin", hat = "Hat", trail = "Trail" }
-local LISTS = { skin = Config.Skins, hat = Config.Hats, trail = Config.Trails }
+local ATTRIBUTE = { skin = "Skin", hat = "Hat", trail = "Trail", outfit = "Outfit" }
+local LISTS = { skin = Config.Skins, hat = Config.Hats, trail = Config.Trails, outfit = Outfits.list }
+local coverNote: TextLabel? -- "El traje lo tapa", junto al rótulo de sombreros
 
 local function at(object: GuiObject, x: number, y: number, w: number?, h: number?)
 	object.Position = UDim2.fromOffset(x, y)
@@ -200,6 +203,13 @@ end
 -- Balda de sombreros: etiquetas de papel colgadas de una barra; giran desde el punto de cuelgue
 local function buildHats(parent: Instance, y: number): number
 	heading(parent, "Sombrero", y, 2)
+	-- Aviso cuando el traje puesto ocupa la cabeza (o la cara, si llevas gafas)
+	local note = Comic.label(parent, "El traje lo tapa", Comic.Body, 16, Comic.Ink)
+	at(note, PAD + 150, y + 6, INNER - 150, 22)
+	note.TextXAlignment = Enum.TextXAlignment.Right
+	note.Rotation = 2
+	note.Visible = false
+	coverNote = note
 	y += 46
 	local perRow = 4
 	local slot = INNER / perRow
@@ -346,18 +356,152 @@ local function buildTrails(parent: Instance, y: number): number
 	return y + math.ceil(#Config.Trails / 2) * rowH + 10
 end
 
+-- Barra con pomos de la que cuelgan sombreros y trajes
+local function rail(parent: Instance, railY: number)
+	local bar = Comic.frame(parent, ROD)
+	at(bar, PAD - 8, railY - 4, INNER + 16, 8)
+	bar.ZIndex = 5
+	Comic.round(bar, 4)
+	Comic.ink(bar, 3)
+	for _, side in { 0, 1 } do
+		local knob = Comic.frame(parent, ROD)
+		knob.AnchorPoint = Vector2.new(0.5, 0.5)
+		at(knob, PAD - 8 + side * (INNER + 16), railY, 16, 16)
+		knob.ZIndex = 6
+		Comic.round(knob)
+		Comic.ink(knob, 3)
+	end
+end
+
+-- Forma suelta del dibujo de un traje: "o" óvalo, "r" rectángulo redondeado, "d" rombo
+local function iconShape(parent: Instance, spec)
+	local kind, x, y, w, h, color, rot = spec[1], spec[2], spec[3], spec[4], spec[5], spec[6], spec[7] or 0
+	local shape = Comic.frame(parent, color)
+	shape.AnchorPoint = Vector2.new(0.5, 0.5)
+	shape.Position = UDim2.fromOffset(x, y)
+	if kind == "d" then
+		shape.Size = UDim2.fromOffset(w, w)
+		shape.Rotation = 45 + rot
+		Comic.round(shape, 2)
+	else
+		shape.Size = UDim2.fromOffset(w, h)
+		shape.Rotation = rot
+		Comic.round(shape, if kind == "o" then nil else 3)
+	end
+	shape.ZIndex = 5
+	Comic.ink(shape, 2, true)
+end
+
+-- Balda de trajes: perchas en una barra, cada una con la silueta del traje en sus colores
+local function buildOutfits(parent: Instance, y: number): number
+	heading(parent, "Trajes", y, -2)
+	y += 52
+	local perRow = 4
+	local slot = INNER / perRow
+	local rowH = 158
+	local half = 150 -- el soporte mide 2 × half y su centro cae en la barra (gira desde ahí)
+	local list = Outfits.list
+	local rows = math.ceil(#list / perRow)
+	local swings = { 4, -5, 3, -6, 5, -3, 6, -4 }
+
+	for row = 1, rows do
+		rail(parent, y + (row - 1) * rowH)
+	end
+
+	for i, def in list do
+		local row = (i - 1) // perRow
+		local col = (i - 1) % perRow
+		local inRow = math.min(perRow, #list - row * perRow)
+		local cx = PAD + (perRow - inRow) * slot / 2 + slot * (col + 0.5)
+		local railY = y + row * rowH
+
+		local holder = Comic.frame(parent)
+		holder.AnchorPoint = Vector2.new(0.5, 0.5)
+		at(holder, cx, railY, 84, half * 2)
+		holder.Rotation = swings[(i - 1) % #swings + 1]
+		holder.ZIndex = 3
+
+		-- Gancho enganchado a la barra y brazos de la percha
+		local hook = Comic.frame(holder)
+		at(hook, 35, half - 7, 14, 14)
+		hook.ZIndex = 6
+		Comic.round(hook)
+		Comic.ink(hook, 3, true)
+		for _, s in { -1, 1 } do
+			local arm = Comic.frame(holder, Comic.Ink)
+			arm.AnchorPoint = Vector2.new(0.5, 0.5)
+			at(arm, 42 + s * 15, half + 15, 33, 4)
+			arm.Rotation = s * 25
+			arm.ZIndex = 3
+		end
+		local bar = Comic.frame(holder, Comic.Ink)
+		at(bar, 10, half + 21, 64, 4)
+		bar.ZIndex = 3
+
+		-- La prenda: torso (el botón) con mangas y detalles dentro
+		local ghost = #def.slots == 0
+		local torso = Instance.new("TextButton")
+		torso.AutoButtonColor = false
+		torso.Text = ""
+		torso.Size = UDim2.fromOffset(46, 58)
+		torso.Position = UDim2.fromOffset(19, half + 34)
+		torso.BackgroundColor3 = def.colors[1]
+		torso.BackgroundTransparency = if ghost then 1 else 0
+		torso.BorderSizePixel = 0
+		torso.ZIndex = 4
+		torso.Parent = holder
+		Comic.round(torso, 8)
+		local stroke = Comic.ink(torso, 3, true)
+		if not ghost then
+			for _, s in { -1, 1 } do
+				local sleeve = Comic.frame(torso, def.colors[1])
+				sleeve.AnchorPoint = Vector2.new(0.5, 0)
+				sleeve.Position = UDim2.fromOffset(if s < 0 then -2 else 48, 2)
+				sleeve.Size = UDim2.fromOffset(16, 30)
+				sleeve.Rotation = -s * 25
+				sleeve.ZIndex = 3
+				Comic.round(sleeve, 5)
+				Comic.ink(sleeve, 3, true)
+			end
+		end
+		for _, spec in def.icon do
+			iconShape(torso, spec)
+		end
+
+		local name = Comic.label(holder, def.name, Comic.Display, 20, Comic.Ink)
+		at(name, 0, half + 98, 84, 22)
+		name.TextScaled = true
+		name.ZIndex = 4
+		local limit = Instance.new("UITextSizeConstraint")
+		limit.MaxTextSize = 20
+		limit.MinTextSize = 12
+		limit.Parent = name
+
+		local tag = chip(holder)
+		tag.Position = UDim2.new(0.5, 0, 0, half + 134)
+		tag.Rotation = if i % 2 == 0 then 3 else -3
+
+		local view = register("outfit", def, holder, torso, stroke, tag)
+		view.ghost = ghost
+	end
+	return y + rows * rowH - 2
+end
+
 -- Pinta cada prenda según su estado. Que no haya duda de cuál llevas.
 local function paint()
 	if not foodLabel then
 		return
 	end
 	foodLabel.Text = "Comida " .. Format.short(State.num("Food"))
+	if coverNote then
+		coverNote.Visible = Outfits.hidesHat(equipped("outfit"), equipped("hat"))
+	end
 	for _, view in views do
 		local state = stateOf(view.kind, view.def)
 		local tag = view.chip
 		view.stroke.Color = if state == "worn" then Comic.Red else Comic.Ink
-		view.stroke.Thickness = if state == "worn" then 7 else (if view.kind == "hat" then 3 else 4)
-		view.base.BackgroundTransparency = if state == "locked" then 0.45 else 0
+		view.stroke.Thickness = if state == "worn" then 7 else (if view.kind == "hat" or view.kind == "outfit" then 3 else 4)
+		view.base.BackgroundTransparency = if view.ghost then 1 elseif state == "locked" then 0.45 else 0
 		tag.Visible = state ~= "owned"
 		tag.TextTransparency = 0
 		tag.BackgroundTransparency = 0
@@ -457,6 +601,7 @@ local function build()
 	y = buildSkins(shelves, y)
 	y = buildHats(shelves, y + 8)
 	y = buildTrails(shelves, y + 8)
+	y = buildOutfits(shelves, y + 8)
 	shelves.CanvasSize = UDim2.fromOffset(0, y + 12)
 
 	resize()

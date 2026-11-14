@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Stats = require(ReplicatedStorage.Shared.Stats)
+local Outfits = require(ReplicatedStorage.Shared.Outfits)
 local Colony = require(script.Parent.Colony)
 local Events = require(script.Parent.Events)
 local Profiles = require(script.Parent.Profiles)
@@ -187,7 +188,7 @@ local function onWear(player: Player, kind: any, id: any)
 	if not profile or type(id) ~= "string" then
 		return
 	end
-	local def = if kind == "skin" then Config.SkinById[id] elseif kind == "hat" then Config.HatById[id] elseif kind == "trail" then Config.TrailById[id] else nil
+	local def = if kind == "skin" then Config.SkinById[id] elseif kind == "hat" then Config.HatById[id] elseif kind == "trail" then Config.TrailById[id] elseif kind == "outfit" then Outfits.byId[id] else nil
 	if not def then
 		return
 	end
@@ -207,6 +208,8 @@ local function onWear(player: Player, kind: any, id: any)
 		data.skin = id
 	elseif kind == "hat" then
 		data.hat = id
+	elseif kind == "outfit" then
+		data.outfit = id
 	else
 		data.trail = id
 	end
