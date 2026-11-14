@@ -46,12 +46,14 @@ type AntState = {
 	sprint: number,
 	lookVersion: any,
 }
-local states: { [Model]: AntState } = setmetatable({}, { __mode = "k" }) :: any
+-- Tablas normales, no débiles: una tabla débil con instancias como clave pierde entradas en cada
+-- recolección de basura aunque la instancia siga viva. Se limpian al destruirse la instancia.
+local states: { [Model]: AntState } = {}
 
 -- Pose de reposo de cada Weld animada: `rest` es el C0 que puso el servidor y `written` lo último
 -- que escribimos. Si el C0 actual no es lo que escribimos, lo cambió el servidor: es la nueva pose.
 type WeldPose = { rest: CFrame, written: CFrame }
-local weldPoses: { [Weld]: WeldPose } = setmetatable({}, { __mode = "k" }) :: any
+local weldPoses: { [Weld]: WeldPose } = {}
 
 local function base(motor: Motor6D): CFrame
 	-- El servidor publica la pose de reposo en el atributo "Base" (AntModel / AntLook) y la
@@ -77,6 +79,9 @@ local function weldRest(weld: Weld): CFrame
 	if not pose then
 		pose = { rest = current, written = current }
 		weldPoses[weld] = pose
+		weld.Destroying:Once(function()
+			weldPoses[weld] = nil
+		end)
 	elseif current ~= pose.written then
 		pose.rest = current
 		pose.written = current
@@ -117,6 +122,9 @@ local function stateOf(character: Model): AntState
 	if not st then
 		st = { phase = 0, speed = 0, heavy = 0, sprint = 0, lookVersion = character:GetAttribute("LookVersion") }
 		states[character] = st
+		character.Destroying:Once(function()
+			states[character] = nil
+		end)
 	end
 	return st
 end
