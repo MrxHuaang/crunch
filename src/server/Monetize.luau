@@ -494,6 +494,10 @@ local function processReceipt(receipt)
 		data.receipts = {}
 	end
 	if table.find(data.receipts, receipt.PurchaseId) then
+		-- Ya entregada, pero quizá su guardado falló: Roblox repite hasta que quede guardada
+		if profile.canSave and not Data.save(player.UserId, data) then
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 

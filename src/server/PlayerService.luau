@@ -154,10 +154,13 @@ end
 local function onPlayerAdded(player: Player)
 	local data, canSave = Data.load(player.UserId)
 	if not player.Parent then
+		if canSave then
+			Data.release(player.UserId) -- salió mientras cargaba: que otro servidor pueda abrirla
+		end
 		return
 	end
 	if not data then
-		player:Kick("No pudimos cargar tu colonia. Vuelve a entrar en un momento.")
+		player:Kick("No pudimos cargar tu colonia. Vuelve a entrar en un par de minutos.")
 		return
 	end
 
@@ -187,7 +190,7 @@ local function onPlayerRemoving(player: Player)
 		releaseAnthill(profile.hill)
 	end
 	if profile.canSave then
-		Data.save(player.UserId, profile.data)
+		Data.save(player.UserId, profile.data, true)
 	end
 end
 
@@ -429,21 +432,15 @@ function PlayerService.start(remotes: Folder)
 	task.spawn(depositLoop)
 	task.spawn(saveLoop)
 
+	-- Espera también los guardados de salida en curso: al irse la última jugadora el servidor
+	-- cierra justo mientras se guarda su colonia.
 	game:BindToClose(function()
-		local pending = 0
 		for player, profile in Profiles.all() do
 			if profile.canSave then
-				pending += 1
-				task.spawn(function()
-					Data.save(player.UserId, profile.data)
-					pending -= 1
-				end)
+				task.spawn(Data.save, player.UserId, profile.data, true)
 			end
 		end
-		local deadline = os.clock() + 20
-		while pending > 0 and os.clock() < deadline do
-			task.wait(0.1)
-		end
+		Data.waitForSaves(25)
 	end)
 
 	-- Herramienta de desarrollo, solo en Studio: dar comida o fijar niveles desde la barra de comandos
