@@ -3,10 +3,14 @@
 # si cambias aquellos, cambia estos.
 #   python tools/sim.py [fracción de tiempo jugando activo, por defecto 0.75] [CostScale, por defecto 0.5]
 import math
+import os
 import sys
 
+# SIN=bee,lens python tools/sim.py: simula sin esas mejoras (para ver cuánto mueve cada una)
+SIN = set(filter(None, os.environ.get("SIN", "").split(",")))
+
 STAGE = 110
-DIG = 6000  # Config.DigBase / CostScale
+DIG = float(os.environ.get("DIG", 10000))  # Config.DigBase / CostScale
 LAYERS = 14  # #Config.Layers
 HP0, HPG, VG = 3, 2.92, 1.64
 BITE_G, CARRY_G = 1.38, 1.38
@@ -74,6 +78,13 @@ def dist(z):
 BITE_TIME = 3
 AUTO_TARGETS = 3
 
+# Abeja mensajera (Config.Allies.Bee): vuela a SPEED + SPEED_STEP por nivel; vuelve a por carga cada
+# INTERVAL s (STEP menos por nivel, nunca menos de MIN) y, desde el nivel FULL, en cuanto te llenas.
+def env(name, default):
+    return float(os.environ.get(name, default))
+BEE_SPEED, BEE_SPEED_STEP = env("BEE_SPEED", 14), env("BEE_SPEED_STEP", 3)
+BEE_INTERVAL, BEE_STEP, BEE_MIN, BEE_FULL = env("BEE_INTERVAL", 45), env("BEE_STEP", 6.6), env("BEE_MIN", 12), env("BEE_FULL", 4)
+
 
 # id: (capa, máximo, niveles por capa, costo a escala de capa 1, crecimiento)
 N = dict(
@@ -88,6 +99,9 @@ N = dict(
     queen=(5, 1, 0, 70, 1), fungus=(6, 5, 0, 50, 6), legion=(7, 10, 0, 45, 4), super=(9, 5, 0, 50, 6),
     sweet=(2, 5, 0, 70, 5), frenzy=(3, 1, 0, 120, 1), frenzyLen=(4, 5, 0, 60, 5), smart=(5, 1, 0, 100, 1),
     express=(6, 5, 0, 40, 5), hive=(8, 5, 0, 40, 5), royalPher=(10, 3, 0, 40, 10),
+    # Aliadas (Config.Allies): un nivel más por capa desde la suya
+    bee=(2, 6, 1, 60, 100), magnet=(3, 5, 1, 50, 100), beetle=(4, 5, 1, 50, 100), escort=(5, 5, 1, 50, 100),
+    stomp=(6, 5, 1, 60, 100), sling=(7, 5, 1, 60, 100), lens=(9, 5, 1, 50, 100), mega=(11, 4, 1, 60, 100),
 )
 CAPS = [5, 10, 20, 35, 60, 100, 150, 220, 300, 400, 500, 620, 750, 900, 1050, 1200, 1400, 1600, 1800, 2000,
         2200, 2400, 2600, 2800, 3000, 3200, 3400, 3600]
@@ -145,7 +159,7 @@ def cost(k):
 
 def avail(k):
     lay, mx, per, c, g = N[k]
-    if depth < lay:
+    if depth < lay or k in SIN:
         return 0
     return min(mx, per * (depth - lay + 1)) if per else mx
 
@@ -153,7 +167,8 @@ def avail(k):
 def income():
     dmg = math.ceil(math.ceil(BITE_G ** L["bite"]) * 2 ** L["titan"] * (1 + T["bitePct"]))
     cd = BITE_CD * 0.95 ** L["chew"] / (1 + T["chewPct"])
-    cap = math.floor(math.floor(CAPACITY * CARRY_G ** L["carry"] * 3 ** L["giant"]) * (1 + T["carryPct"]))
+    # Escarabajo de carga: +40 % de carga por nivel
+    cap = math.floor(CAPACITY * CARRY_G ** L["carry"] * 3 ** L["giant"] * (1 + T["carryPct"]) * (1 + 0.4 * L["beetle"]))
     sp = (WALK + L["speed"]) * (1 + T["speedPct"])
     if L["sprint"]:
         sp *= 1 + (3 + L["stamina"]) / 12.0
@@ -168,13 +183,37 @@ def income():
         d = dmg * crit * combo * ((1 + 0.5 * L["venom"]) * (1 + T["hardPct"]) if f["hard"] else 1)
         items = min(6, f["count"])
         load = min(cap, items * f["hp"])
-        bites = load / min(d, f["hp"])
         n = math.ceil(load / f["hp"])
-        tm = bites * cd + n * 1.2 + 2 * dist(f["z"]) / sp + 2
+        # Trozos por segundo mordiendo: tus mordiscos, la escolta (30 % de tu mordida por soldado
+        # cada 0,7 s), el mega crunch (un mordisco gigante cada `every`), el pisotón (3 mordiscos a
+        # unas dos comidas, cuando está listo) y el imán (tosco: +3 % por nivel)
+        rate = min(d, f["hp"]) / cd
+        if L["escort"]:
+            rate += min(0.3 * L["escort"] * dmg, f["hp"]) / 0.7
+        if L["mega"]:
+            rate += min((10 + 5 * (L["mega"] - 1)) * d, load) / ((25 - 3 * (L["mega"] - 1)) * cd)
+        if L["stomp"]:
+            rate += min(6 * dmg, load) / (30 - 4 * (L["stomp"] - 1)) * ACTIVE
+        rate *= 1 + 0.03 * L["magnet"]
+        work = load / rate + n * 1.2 + 2
+        walk = 2 * dist(f["z"]) / sp
         if L["wings"] and f["z"] > 1:
-            tm -= dist(f["z"]) / sp * 0.8
+            walk -= dist(f["z"]) / sp * 0.8
+        # Abeja y tirachinas: cada viaje que hacen ellas es un paseo que te ahorras
+        covered = 0
+        if L["bee"]:
+            # No vuelve a por otra carga hasta que regresa de casa
+            trip = 2 * max(dist(f["z"]) / (BEE_SPEED + BEE_SPEED_STEP * (L["bee"] - 1)), 1.6) + 0.75
+            wait = trip if L["bee"] >= BEE_FULL else max(trip, max(BEE_MIN, round(BEE_INTERVAL - BEE_STEP * (L["bee"] - 1))))
+            covered = (work + walk) / wait
+        if L["sling"] and dist(f["z"]) <= 400 + 200 * (L["sling"] - 1):
+            covered += (work + walk) / (40 - 5 * (L["sling"] - 1)) * ACTIVE
+        tm = work + walk * (1 - min(covered, 1))
         inc = load * f["v"] * (1 + ZONE[f["z"]]) * gold * (1 + T["depositPct"])
         inc *= (1 + 0.1 * L["fullLoad"]) * (1 + 0.1 * L["double"]) / tm
+        # Lupa: quema (4 + 2 por nivel) mordiscos de la comida grande cada (20 - 2 por nivel) s, directo a casa
+        if L["lens"]:
+            inc += min((4 + 2 * (L["lens"] - 1)) * dmg, f["hp"]) * f["v"] * (1 + ZONE[f["z"]]) / (20 - 2 * (L["lens"] - 1))
         if f["boss"]:
             inc *= 0.5
         if inc > best:
