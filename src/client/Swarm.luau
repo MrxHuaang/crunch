@@ -196,6 +196,8 @@ local function newColony(hill: Model)
 		routeCount = 0, -- rutas vivas
 		mask = 0, -- qué huecos estaban vivos en el último reparto
 		assigned = -1, -- cuántas hormigas había en el último reparto
+		shareKey = "", -- TrailShare1..3 del último reparto (escuadrones)
+		weights = nil :: { number }?,
 		counts = { 0, 0, 0 },
 		quota = { 0, 0, 0 },
 		culled = false,
@@ -298,7 +300,9 @@ local function updateRoutes(colony, hill: Model, scale: number, showMarkers: boo
 			end
 			route.alive = true
 			route.seen = clock
-			if showMarkers then
+			-- Marked: cuántos de los primeros huecos son rastros a mano (con escuadrones, los demás no)
+			local marked = hill:GetAttribute("Marked")
+			if showMarkers and (type(marked) ~= "number" or i <= marked) then
 				markerWant[i] = true
 				markerAt[i] = foodPos + Vector3.new(0, 5 + route.radius, 0)
 			end
@@ -318,10 +322,16 @@ local function updateRoutes(colony, hill: Model, scale: number, showMarkers: boo
 		route.shown = if distance <= stepLen then route.target else route.shown + gap * (stepLen / distance)
 
 		local endPos = route.shown
-		local flat = (endPos - hillPos) * Vector3.new(1, 0, 1)
+		-- Puesto avanzado (módulo Extras): la comida de su zona o más allá sale del puesto, no de casa
+		local base, gap0 = hillPos, 9 * scale
+		local outpost, edge = hill:GetAttribute("OutpostPos"), hill:GetAttribute("OutpostZ")
+		if typeof(outpost) == "Vector3" and type(edge) == "number" and endPos.Z <= edge then
+			base, gap0 = outpost, 4
+		end
+		local flat = (endPos - base) * Vector3.new(1, 0, 1)
 		local length = flat.Magnitude
 		local dir = if length > 0.1 then flat / length else Vector3.xAxis
-		local from = hillPos + dir * (9 * scale)
+		local from = base + dir * gap0
 		local to = endPos - dir * (route.radius + 0.4)
 		route.from = Vector3.new(from.X, ground, from.Z)
 		route.to = Vector3.new(to.X, ground, to.Z)
@@ -361,12 +371,35 @@ local function rebalance(colony, alive: number)
 		end
 	end
 
-	local base = total // alive
-	local extra = total % alive
-	for s = 1, 3 do
-		if routes[s].alive then
-			quota[s] = base + (if extra > 0 then 1 else 0)
-			extra -= 1
+	local weights = colony.weights -- escuadrones (TrailShare1..3): filas según su parte
+	if weights then
+		local sum = 0
+		for s = 1, 3 do
+			if routes[s].alive then
+				sum += weights[s]
+			end
+		end
+		local given = 0
+		for s = 1, 3 do
+			if routes[s].alive and sum > 0 then
+				quota[s] = math.max(math.floor(total * weights[s] / sum), if total >= alive then 1 else 0)
+				given += quota[s]
+			end
+		end
+		for s = 1, 3 do
+			if routes[s].alive and given < total then
+				quota[s] += total - given
+				given = total
+			end
+		end
+	else
+		local base = total // alive
+		local extra = total % alive
+		for s = 1, 3 do
+			if routes[s].alive then
+				quota[s] = base + (if extra > 0 then 1 else 0)
+				extra -= 1
+			end
 		end
 	end
 
@@ -628,7 +661,22 @@ function Swarm.start()
 			if total == 0 then
 				continue
 			end
-			-- Reparto estable: solo se rehace si cambian las rutas vivas o el número de hormigas
+			-- Escuadrones (módulo Orders): parte de las obreras de cada hueco; sin ella, filas iguales
+			local share1, share2, share3 = hill:GetAttribute("TrailShare1"), hill:GetAttribute("TrailShare2"), hill:GetAttribute("TrailShare3")
+			local weighted = type(share1) == "number" or type(share2) == "number" or type(share3) == "number"
+			local shareKey = if weighted then string.format("%s|%s|%s", tostring(share1), tostring(share2), tostring(share3)) else ""
+			if shareKey ~= colony.shareKey then
+				colony.shareKey = shareKey
+				colony.weights = if weighted
+					then {
+						if type(share1) == "number" then share1 else 0,
+						if type(share2) == "number" then share2 else 0,
+						if type(share3) == "number" then share3 else 0,
+					}
+					else nil
+				colony.assigned = -1 -- fuerza el reparto
+			end
+			-- Reparto estable: solo se rehace si cambian las rutas vivas, el número de hormigas o su parte
 			if mask ~= colony.mask or total ~= colony.assigned then
 				colony.mask = mask
 				colony.assigned = total
@@ -700,6 +748,14 @@ function Swarm.start()
 			Workspace:BulkMoveTo(parts, cframes, Enum.BulkMoveMode.FireCFrameChanged)
 		end
 	end)
+end
+
+-- Ruta viva i (1..3) de la colonia de ese hormiguero, o nil. Solo lectura: la usa el módulo Orders
+-- para plantar el banderín de cada escuadrón a la cabeza de su fila.
+function Swarm.route(hill: Model, i: number)
+	local colony = colonies[hill]
+	local route = colony and colony.routes[i]
+	return if route and route.alive then route else nil
 end
 
 return Swarm
