@@ -44,7 +44,11 @@ local NEAR = 220 -- efectos que solo se ven si pasan cerca
 local SNAP = 60 -- más lejos que esto de su sitio, aparecen directamente allí
 local BEE_SCALE = 1.5
 local BEETLE_SCALE = 2
-local BEETLE_SLOT = Vector3.new(0, 0, 7.2) -- detrás de la hormiga, tras las mascotas
+-- El escarabajo iba justo detrás (0, 0, 7,2): en la línea de la cámara, que lo tenía encima y tapaba
+-- media pantalla. Ahora va a la derecha y algo detrás, con hueco según su tamaño y el de la hormiga.
+local BEETLE_GAP = Vector3.new(1.6, 0, 1.2) -- aire entre la hormiga y el escarabajo (lado, detrás)
+local BEETLE_MAX = 1.3 -- nunca más largo que 1,3 veces la hormiga
+local BEETLE_FADE = 0.65 -- transparencia si aun así se mete entre la cámara y tu hormiga
 local ESCORT_SLOTS = {
 	Vector3.new(-3.4, 0, -0.6),
 	Vector3.new(3.4, 0, -0.6),
@@ -78,6 +82,8 @@ local INTRO = {
 
 local container: Model
 local fxFolder: Folder
+local focus: Vector3? = nil -- tu hormiga, para ver si un escarabajo se pone entre ella y la cámara
+local camNow = Vector3.zero
 local remote: RemoteEvent? = nil
 local rigs: { [Player]: any } = {}
 local moveParts: { BasePart } = {}
@@ -205,7 +211,16 @@ local function kit(model: Model, scale: number)
 		hinges = {},
 		height = ((model:GetAttribute("Height") :: number?) or 0.6) * scale,
 		shown = false,
+		-- Medidas a la escala de partida, para poder encogerlo luego (resize)
+		baseSizes = {},
+		baseOffsets = {},
+		baseHinges = {},
+		factor = 1,
+		length = 0,
+		width = 0,
 	}
+	k.baseHeight = k.height
+	local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
 	for _, d in model:GetDescendants() do
 		if not d:IsA("BasePart") then
 			continue
@@ -226,15 +241,48 @@ local function kit(model: Model, scale: number)
 		table.insert(k.parts, d)
 		local i = #k.parts
 		k.offsets[i] = offset
+		k.baseSizes[i] = d.Size
+		k.baseOffsets[i] = offset
+		-- Planta del modelo (mira hacia -Z): largo en Z, ancho en X
+		local half = d.Size / 2
+		local r, u, b = offset.RightVector * half.X, offset.UpVector * half.Y, offset.LookVector * half.Z
+		local ex = math.abs(r.X) + math.abs(u.X) + math.abs(b.X)
+		local ez = math.abs(r.Z) + math.abs(u.Z) + math.abs(b.Z)
+		minX, maxX = math.min(minX, offset.X - ex), math.max(maxX, offset.X + ex)
+		minZ, maxZ = math.min(minZ, offset.Z - ez), math.max(maxZ, offset.Z + ez)
 		local hinge = d:GetAttribute("Hinge")
 		local flap = d:GetAttribute("Flap")
 		local jaw = d:GetAttribute("Jaw")
 		if typeof(hinge) == "CFrame" and (type(flap) == "number" or type(jaw) == "number") then
 			local h = hinge.Rotation + hinge.Position * scale
 			k.hinges[i] = { hinge = h, rel = h:ToObjectSpace(offset), side = flap or jaw, yaw = type(jaw) == "number" }
+			k.baseHinges[i] = h
 		end
 	end
+	if #k.parts > 0 then
+		k.length, k.width = maxZ - minZ, maxX - minX
+	end
 	return k
+end
+
+-- Encoge (o devuelve) un kit a `factor` de su escala de partida. Solo toca las piezas si cambia.
+local function resize(k, factor: number)
+	if math.abs(factor - k.factor) < 0.04 then
+		return
+	end
+	k.factor = factor
+	for i, part in k.parts do
+		part.Size = k.baseSizes[i] * factor
+		local o = k.baseOffsets[i]
+		k.offsets[i] = o.Rotation + o.Position * factor
+		local hb = k.baseHinges[i]
+		if hb and k.hinges[i] then
+			local h = hb.Rotation + hb.Position * factor
+			k.hinges[i].hinge = h
+			k.hinges[i].rel = h:ToObjectSpace(k.offsets[i])
+		end
+	end
+	k.height = k.baseHeight * factor
 end
 
 local function push(part: BasePart, cframe: CFrame)
@@ -410,7 +458,7 @@ local function newBeetle()
 	local model = petModel("escarabajo", fallbackBeetle)
 	local k = kit(model, BEETLE_SCALE)
 	local pile = newPart(model, Vector3.new(1, 1, 1), Comic.Crumb)
-	return { kit = k, pile = pile, pos = nil :: Vector3?, yaw = 0, step = 0 }
+	return { kit = k, pile = pile, pos = nil :: Vector3?, yaw = 0, step = 0, fade = 0 }
 end
 
 local function newEscort(index: number)
@@ -497,9 +545,63 @@ local function updateBee(rig, owner, now: number, dt: number)
 	end
 end
 
+-- ¿Está `point` (con radio `radius`) entre la cámara y tu hormiga? Devuelve el punto más cercano
+-- de esa línea si lo está.
+local function blocking(point: Vector3, radius: number): Vector3?
+	local target = focus
+	if not target then
+		return nil
+	end
+	local line = target - camNow
+	local len2 = line:Dot(line)
+	if len2 < 1 then
+		return nil
+	end
+	local t = (point - camNow):Dot(line) / len2
+	if t <= 0 or t >= 1 then
+		return nil
+	end
+	local closest = camNow + line * t
+	return if (point - closest).Magnitude < radius then closest else nil
+end
+
 local function updateBeetle(rig, owner, target: Player, now: number, dt: number)
 	local beetle = rig.beetle
-	local goal = owner.ground + owner.turn:VectorToWorldSpace(BEETLE_SLOT * owner.scale)
+	local k = beetle.kit
+	-- Tamaño: como mucho BEETLE_MAX veces lo que mide la hormiga (caja alineada con su raíz)
+	if not rig.antAt or now - rig.antAt > 1 then
+		rig.antAt = now
+		local ok, ext = pcall(function()
+			return owner.character:GetExtentsSize()
+		end)
+		if ok and typeof(ext) == "Vector3" then
+			rig.antLen = math.max(ext.Z, ext.X, 0.5)
+			rig.antWidth = math.max(ext.X, 0.5)
+		end
+	end
+	local antLen = rig.antLen or 3 * owner.scale
+	local antWidth = rig.antWidth or 2 * owner.scale
+	if k.length > 0 then
+		resize(k, math.clamp(BEETLE_MAX * antLen / k.length, 0.25, 1))
+	end
+	local length, width = k.length * k.factor, k.width * k.factor
+	-- Sitio: a la derecha de la hormiga y algo detrás (no en la línea de la cámara)
+	local slot = Vector3.new(antWidth / 2 + width / 2 + BEETLE_GAP.X, 0, antLen / 2 + length / 2 + BEETLE_GAP.Z)
+	local goal = owner.ground + owner.turn:VectorToWorldSpace(slot)
+	-- Si aun así su sitio queda entre la cámara y tu hormiga, se aparta hacia un lado
+	local radius = math.max(length, width) * 0.5
+	if target == player then
+		local closest = blocking(goal + Vector3.new(0, k.height, 0), radius + 1.5)
+		if closest then
+			local away = goal - closest
+			away = Vector3.new(away.X, 0, away.Z)
+			if away.Magnitude < 0.05 then
+				away = owner.turn:VectorToWorldSpace(Vector3.xAxis)
+			end
+			local push = closest + away.Unit * (radius + 1.5)
+			goal = Vector3.new(push.X, owner.ground.Y, push.Z)
+		end
+	end
 	local pos = beetle.pos
 	if not pos or (pos - goal).Magnitude > SNAP then
 		pos = goal
@@ -517,6 +619,20 @@ local function updateBeetle(rig, owner, target: Player, now: number, dt: number)
 	local lift = beetle.kit.height + math.abs(math.sin(beetle.step)) * 0.12 * math.clamp(speed / 4, 0, 1)
 	local base = CFrame.new(nextPos + Vector3.new(0, lift, 0)) * CFrame.Angles(0, beetle.yaw, 0)
 	place(beetle.kit, base, 0, 0)
+	-- Mientras pasa por delante de la cámara (al girarla, por ejemplo), se vuelve semitransparente
+	local want = if blocking(nextPos + Vector3.new(0, lift, 0), radius + 0.5) then BEETLE_FADE else 0
+	if beetle.fade ~= want then
+		local fade = beetle.fade + (want - beetle.fade) * math.min(1, dt * 8)
+		if math.abs(want - fade) < 0.02 then
+			fade = want
+		end
+		beetle.fade = fade
+		for _, part in k.parts do
+			part.LocalTransparencyModifier = fade
+		end
+		beetle.pile.LocalTransparencyModifier = fade
+	end
+	local s = BEETLE_SCALE * k.factor
 
 	-- Lo que no te cabe a ti va en su lomo
 	local carry = tonumber(target:GetAttribute("Carry")) or 0
@@ -530,9 +646,9 @@ local function updateBeetle(rig, owner, target: Player, now: number, dt: number)
 		if beetle.pile.Color ~= color then
 			beetle.pile.Color = color
 		end
-		local side = (0.7 + 1.5 * fill) * BEETLE_SCALE * 0.5
+		local side = (0.7 + 1.5 * fill) * s * 0.5
 		beetle.pile.Size = Vector3.new(side * 1.2, side, side * 1.1)
-		push(beetle.pile, base * CFrame.new(0, 0.45 * BEETLE_SCALE + side * 0.35, 0.25 * BEETLE_SCALE) * CFrame.Angles(0.15, 0.4, 0))
+		push(beetle.pile, base * CFrame.new(0, 0.45 * s + side * 0.35, 0.25 * s) * CFrame.Angles(0.15, 0.4, 0))
 	else
 		push(beetle.pile, PARK)
 	end
@@ -674,6 +790,10 @@ local function step(rawDt: number)
 	local camera = Workspace.CurrentCamera
 	local camPos = if camera then camera.CFrame.Position else Vector3.zero
 	n = 0
+	camNow = camPos
+	local myCharacter = player.Character
+	local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+	focus = if myRoot and myRoot:IsA("BasePart") then myRoot.Position else nil
 
 	for _, target in Players:GetPlayers() do
 		local escortCount = math.min(level(target, "escort"), MAX_ESCORTS)
