@@ -5,7 +5,11 @@ local Config = {}
 -- Antes de tocar estos números, mira tools/sim.py (simula el bucle de ir, morder, llenarse y volver).
 Config.Player = {
 	WalkSpeed = 16, -- subió de 12: las zonas son más grandes. Paso rápido suma SpeedStep por nivel
-	SpeedStep = 2,
+	SpeedStep = 1.2,
+	-- Techo de la velocidad al andar (sin correr): las zonas miden 230. Lo que las mejoras den de más
+	-- se vuelve comida: x(velocidad de las mejoras / MaxWalk) ^ SpeedYield (Stats.derive)
+	MaxWalk = 45,
+	SpeedYield = 0.5,
 	BiteCooldown = 0.3,
 	-- Mordisco veloz multiplica el enfriamiento por ChewStep por nivel; por debajo de MinBiteCooldown ya no
 	-- muerdes más rápido: lo que sobra se vuelve comida (Stats.derive, chewYield)
@@ -17,8 +21,8 @@ Config.Player = {
 	-- multiplicador de comida). Así subir la mordida se nota siempre en el ingreso, pero la comida de tu
 	-- zona sigue pidiendo varios mordiscos. BiteBase: trozos del primer mordisco.
 	BiteBase = 3,
-	BitePower = 1.28,
-	BiteSplit = 0.33,
+	BitePower = 1.2,
+	BiteSplit = 0.42,
 	-- Carga (en trozos): Capacity * CarryGrowth^nivel de Lomo fuerte, multiplicada por todo lo que hace
 	-- morder mejor (Stats.harvest). Nunca baja de MinLoadBites mordiscos normales.
 	Capacity = 42, -- 14 mordiscos de 3 trozos
@@ -32,12 +36,17 @@ Config.Player = {
 	AreaShare = 0.5, -- Mordida en área: parte del mordisco que se lleva cada comida vecina
 	TitanPower = 1.3, -- Mandíbula titán: tu comida rinde x esto por nivel (antes x2 de mordida)
 	GiantCarry = 1.15, -- Hormiga gigante: carga x esto por nivel (antes x3: los viajes no acababan nunca)
+	-- Lo que arrancan a las comidas de al lado área, doble mandíbula, cadena, escolta y mega crunch, todo
+	-- junto, como mucho NeighborCap veces lo de tu mordisco (si no, una pulsación se comía el racimo
+	-- entero). Lo que pase del tope se vuelve comida: x(lo que darían / NeighborCap) ^ NeighborYield.
+	NeighborCap = 2.5,
+	NeighborYield = 0.5,
 }
 
 -- Hitos: al llegar a estos niveles, Mordida fuerte, Lomo fuerte y Obreras fuertes dan un salto. La
 -- mordida y las obreras se multiplican por Mult; la carga por CarryMult (si saltara x2, los viajes se
 -- alargarían sin fin). Stats.milestones(nivel) dice cuántos hitos lleva un nivel.
-Config.Milestones = { Levels = { 10, 25, 50, 75, 100, 125 }, Mult = 2, CarryMult = 1.25 }
+Config.Milestones = { Levels = { 10, 25, 50, 75, 100, 125 }, Mult = 2, CarryMult = 1.15 }
 
 Config.Anthill = {
 	DepositRadius = 11, -- se multiplica por la escala del hormiguero
@@ -47,7 +56,7 @@ Config.Worker = {
 	Speed = 16, -- subió de 8: las zonas son más largas
 	SpeedStep = 0.3, -- Obreras rápidas: velocidad por nivel
 	Carry = 1,
-	CarryGrowth = 1.27, -- Obreras fuertes: carga por nivel (más los hitos)
+	CarryGrowth = 1.18, -- Obreras fuertes: carga por nivel (más los hitos)
 	TurnTime = 1.5, -- segundos que pierde cada obrera por viaje entre morder y soltar
 	BaseCost = 200, -- la primera obrera llega hacia los tres minutos
 	CostGrowth = 1.03,
@@ -56,8 +65,8 @@ Config.Worker = {
 -- Multiplicadores de la colonia por nivel (Stats.derive). Spread: lo que no cabe en la comida marcada
 -- (tope de su vida cada 3 s) pasa a tantas comidas de su racimo (src/server/Colony.luau).
 Config.Colony = {
-	Barracks = 1.2,
-	Legion = 1.18,
+	Barracks = 1.15,
+	Legion = 1.05, -- (y +3 % de comida por nivel: Config.Tree yield)
 	Super = 1.35, -- Supercolonia: carga de cada obrera
 	Express = 0.85, -- Autopista: lo que dura cada viaje
 	Sweet = 0.4, -- Feromona dulce: la comida marcada rinde esto más
@@ -82,7 +91,7 @@ Config.Combo = { Step = 0.03, Window = 1.6, Typical = 8 }
 -- Huevo dorado: cada Interval s (IntervalStep menos por nivel, nunca menos de MinInterval) vale Seconds
 -- s de colonia (SecondsStep más por nivel) o, como poco, FloorBites mordiscos a la comida pequeña de tu zona
 Config.Egg = { Interval = 300, IntervalStep = 15, MinInterval = 210, Seconds = 15, SecondsStep = 4, FloorBites = 300 }
-Config.Fungus = { Regrow = 300, Duration = 20, Step = 4, Mult = 2 }
+Config.Fungus = { Regrow = 300, Duration = 15, Step = 3, Mult = 2 }
 Config.Trophy = { Bonus = 0.03 } -- por cada tipo de comida terminado alguna vez
 
 -- Comida dorada: al aparecer, cada comida (nunca la tarta) sale dorada con Chance, más ChanceStep por
@@ -114,8 +123,8 @@ Config.Offline = {
 }
 
 Config.Save = {
-	Store = "CrunchSave_v2",
-	TopStore = "CrunchTop_v2",
+	Store = "CrunchSave_v3",
+	TopStore = "CrunchTop_v3",
 	Interval = 60,
 }
 
@@ -187,19 +196,20 @@ Config.Zones = {
 	zone(14, "Espacio", "Espacio", Color3.fromRGB(34, 30, 66)),
 }
 
--- Tres comidas por zona (pequeña, mediana, grande). La vida sale de la mordida de referencia de su
--- zona (la de quien va a media capa con Mordida fuerte al día) por los mordiscos que debe costar:
--- Bites a media capa, Extra por lo que pega de más (mordida doble, racha, galerías) y HardExtra la
--- comida dura (Saliva ácida, Quebrantahuesos). El valor de un trozo: ZoneValues de su zona por
+-- Tres comidas por zona (pequeña, mediana, grande). La vida se fija para quien EMPIEZA la capa con lo de
+-- la anterior comprado: Bites pulsaciones con Mordida fuerte a nivel 10 * (zona - 1), por Press (lo
+-- que pega de más una pulsación entonces: galerías, mordida doble y racha de media) y HardPress contra
+-- la comida dura (Saliva ácida, Quebrantahuesos). A media capa cuestan más o menos 3-5 / 8-14 / 25-40.
+-- Press y HardPress salen de python tools/sim.py --calibrar. El valor de un trozo: ZoneValues de su zona por
 -- SlotValue. Todo medido con tools/sim.py para que cada capa dure unos 30 min jugando activo; las capas
 -- 7 y 12 abren pocas mejoras nuevas y su comida vale bastante más que la de la zona anterior.
 -- Lo que vale una comida entera es hp * value. hard: hace falta la mandíbula sierra (tú) o el cuartel.
 Config.FoodCurve = {
-	Bites = { 6, 18, 56 },
+	Bites = { 6, 18, 55 },
 	SlotValue = { 1, 1.3, 1.7 },
-	ZoneValues = { 1, 1.5, 2.25, 6.1, 14.5, 21.5, 190, 280, 530, 1350, 4250, 7.2e4, 1.07e5, 1.65e5 },
-	Extra = { 1, 1, 1.4, 1.9, 2, 2.1, 2.5, 2.7, 2.8, 2.9, 2.9, 3, 3, 3.1 },
-	HardExtra = { 1, 1.5, 1.5, 1.6, 1.3, 1.7, 1.7, 2.6, 2.8, 3.6, 4, 3.2, 4, 3.2 },
+	ZoneValues = { 1, 2.4, 4.4, 15.5, 36, 61, 670, 1300, 2100, 3600, 11000, 1.2e5, 5.2e5, 8e5 },
+	Press = { 1, 1.3, 2.1, 2.5, 2.5, 2.4, 3.2, 3.6, 3.8, 3.9, 3.7, 4, 4.2, 4.2 },
+	HardPress = { 1, 1, 1.4, 1.5, 1.5, 1.8, 1.8, 2.8, 3.5, 4.5, 5.1, 5.1, 7, 5.6 },
 	BossHp = 20,
 }
 
@@ -285,14 +295,14 @@ for i, entry in FOOD_LIST do
 	local slot = (i - 1) % 3 + 1
 	local zoneId = (i - 1) // 3 + 1
 	local hard = entry[3] == true
-	-- Mordida de referencia de la zona: la de media capa (nivel 10 * (zona - 1) + 5)
-	local ref = Config.levelBite(10 * (zoneId - 1) + 5)
+	-- Lo que arranca una pulsación de quien empieza la capa de esta zona (ver Config.FoodCurve)
+	local ref = Config.levelBite(10 * (zoneId - 1)) * curve.Press[zoneId]
 	local def = {
 		id = entry[1],
 		name = entry[2],
 		hard = hard,
 		zone = zoneId,
-		hp = round2(curve.Bites[slot] * ref * curve.Extra[zoneId] * (if hard then curve.HardExtra[zoneId] else 1)),
+		hp = round2(curve.Bites[slot] * ref * (if hard then curve.HardPress[zoneId] else 1)),
 		value = round2(curve.ZoneValues[zoneId] * curve.SlotValue[slot]),
 		count = COUNTS[slot],
 		respawn = Config.FoodLayout.Respawn[slot],
@@ -341,12 +351,14 @@ Config.Layers = {
 	"Caliza", "Roca fría", "Pizarra", "Granito", "Roca viva", "Cristal", "El fondo",
 }
 Config.StageGrowth = 110 -- cada capa todo cuesta (y rinde) unas 110 veces más
-Config.DigBase = 20000 -- excavar la capa 2; cada capa siguiente, StageGrowth veces más (tools/sim.py)
+Config.DigBase = 12000 -- excavar la capa 2; cada capa siguiente, StageGrowth veces más (tools/sim.py)
 Config.CostScale = 7.5 -- abarata o encarece todo el árbol de golpe (ver tools/sim.py); subió de 0.5 con la carga nueva
 
 local BRANCH = { M = "Mandíbulas", P = "Patas", C = "Colonia", F = "Feromonas", A = "Aliadas" }
 
 -- `cost` se escribe a escala de la capa 1 y se multiplica por StageGrowth^(capa - 1).
+-- yield: cada nivel multiplica además toda tu comida por (1 + yield). Lo llevan las mejoras que solas
+-- apenas movían el ingreso (tools/sim.py --audit), para que ninguna compra sea inútil.
 local function node(id, col, layer, row, def)
 	local layout = Config.TreeLayout
 	local stage = Config.StageGrowth ^ (layer - 1)
@@ -363,15 +375,15 @@ end
 
 Config.Tree = {
 	-- Mandíbulas
-	node("bite", "M", 1, 1, { name = "Mordida fuerte", desc = "Cada mordisco arranca más.", max = 140, per = 10, cost = 10, growth = 1.6 }),
+	node("bite", "M", 1, 1, { name = "Mordida fuerte", desc = "Cada mordisco arranca más.", max = 140, per = 10, cost = 6, growth = 1.6 }),
 	node("chew", "M", 1, 2, { name = "Mordisco veloz", desc = "Muerdes más seguido.", max = 28, per = 2, cost = 60, growth = 10.5, parent = "bite", icon = "bite" }),
-	node("crit", "M", 2, 1, { name = "Mordida doble", desc = "A veces muerdes mucho más fuerte.", max = 5, cost = 30, growth = 3.5, parent = "chew" }),
+	node("crit", "M", 2, 1, { name = "Mordida doble", desc = "A veces muerdes mucho más fuerte.", max = 5, cost = 30, growth = 3.5, parent = "chew", yield = 0.02 }),
 	node("saw", "M", 2, 2, { name = "Mandíbula sierra", desc = "Puedes morder comida dura: manzanas, cocos, latas.", max = 1, cost = 300, growth = 1, parent = "crit" }),
 	node("combo", "M", 3, 1, { name = "Racha", desc = "Cada mordisco seguido pega un poco más. Si paras, se pierde.", max = 5, cost = 40, growth = 5, parent = "saw", icon = "crit" }),
 	node("reach", "M", 4, 1, { name = "Cuello largo", desc = "Alcanzas la comida desde más lejos.", max = 4, cost = 40, growth = 6, parent = "combo", icon = "area" }),
 	node("area", "M", 5, 1, { name = "Mordida en área", desc = "Tu mordisco alcanza también la comida cercana.", max = 3, cost = 40, growth = 8, parent = "reach" }),
 	node("brutal", "M", 6, 1, { name = "Mordisco brutal", desc = "La mordida doble pega todavía más.", max = 5, cost = 40, growth = 5, parent = "area", icon = "crit" }),
-	node("venom", "M", 8, 1, { name = "Saliva ácida", desc = "La comida dura se deshace: la muerdes mucho más rápido.", max = 5, cost = 40, growth = 5, parent = "brutal", icon = "saw" }),
+	node("venom", "M", 8, 1, { name = "Saliva ácida", desc = "La comida dura se deshace: la muerdes mucho más rápido.", max = 5, cost = 40, growth = 5, parent = "brutal", icon = "saw", yield = 0.06 }),
 	node("titan", "M", 8, 2, { name = "Mandíbula titán", desc = "Tu mordida pega y rinde bastante más.", max = 5, cost = 50, growth = 8, parent = "venom", icon = "saw" }),
 	node("chain", "M", 3, 2, { name = "Mordida en cadena", desc = "Al terminar una comida, un rayo salta a la de al lado y le arranca un trozo. Y otra vez.", max = 5, cost = 50, growth = 5, parent = "combo", icon = "crit" }),
 	-- Mejoras que cambian cómo juegas (Config.Extras, módulos Extras del servidor y del cliente)
@@ -379,14 +391,14 @@ Config.Tree = {
 	node("doubleJaw", "M", 9, 1, { name = "Doble mandíbula", desc = "Cada mordisco muerde también la comida de al lado.", max = 3, cost = 50, growth = 8, parent = "titan", icon = "bite" }),
 
 	-- Patas
-	node("speed", "P", 1, 1, { name = "Paso rápido", desc = "Caminas más rápido.", max = 42, per = 3, cost = 15, growth = 4.8 }),
-	node("carry", "P", 1, 2, { name = "Lomo fuerte", desc = "Cargas más trozos por viaje.", max = 140, per = 10, cost = 10, growth = 1.6, parent = "speed" }),
+	node("speed", "P", 1, 1, { name = "Paso rápido", desc = "Caminas más rápido.", max = 42, per = 3, cost = 15, growth = 4.8, yield = 0.01 }),
+	node("carry", "P", 1, 2, { name = "Lomo fuerte", desc = "Cargas más trozos por viaje.", max = 140, per = 10, cost = 6, growth = 1.6, parent = "speed", yield = 0.01 }),
 	node("sprint", "P", 2, 1, { name = "Turbo", desc = "Un acelerón corto a más del doble de velocidad. Correr normal ya lo tienes.", max = 1, cost = 25, growth = 1, parent = "carry", hint = "{tecla} para meter el turbo", key = "Z", button = "Turbo" }),
-	node("stamina", "P", 2, 2, { name = "Resuello", desc = "El turbo dura más.", max = 5, cost = 20, growth = 4, parent = "sprint", icon = "sprint" }),
+	node("stamina", "P", 2, 2, { name = "Resuello", desc = "El turbo dura más.", max = 5, cost = 20, growth = 4, parent = "sprint", icon = "sprint", yield = 0.05 }),
 	node("wings", "P", 3, 1, { name = "Alas", desc = "Vuelas a tu hormiguero. Y desde casa, a tu zona más lejana.", max = 1, cost = 170, growth = 1, parent = "stamina", hint = "{tecla} y vuelvo volando a casa. Desde casa, vuelo a mi zona más lejana", key = "R", button = "Volar" }),
-	node("landing", "P", 4, 1, { name = "Vuelo corto", desc = "Las alas se recuperan antes y caminas más rápido.", max = 5, cost = 45, growth = 4, parent = "wings", icon = "wings" }),
+	node("landing", "P", 4, 1, { name = "Vuelo corto", desc = "Las alas se recuperan antes y caminas más rápido.", max = 5, cost = 45, growth = 4, parent = "wings", icon = "wings", yield = 0.05 }),
 	node("fullLoad", "P", 5, 1, { name = "Entrega llena", desc = "Si entregas con la carga llena, la entrega vale más. No da más carga.", max = 5, cost = 40, growth = 5, parent = "landing", icon = "anthill" }),
-	node("giant", "P", 7, 1, { name = "Hormiga gigante", desc = "Creces. Y cargas más.", max = 3, cost = 60, growth = 15, parent = "fullLoad", icon = "carry" }),
+	node("giant", "P", 7, 1, { name = "Hormiga gigante", desc = "Creces. Y cargas más.", max = 3, cost = 60, growth = 15, parent = "fullLoad", icon = "carry", yield = 0.06 }),
 	node("tunnel", "P", 2, 3, { name = "Túnel exprés", desc = "Un agujero junto a tu hormiguero que sale a la entrada de cada zona abierta. Y vuelta.", max = 1, cost = 40, growth = 1, parent = "stamina", icon = "anthill", hint = "Mi túnel está delante del hormiguero, junto al cartel", key = "B", button = "Túnel" }),
 	node("buche", "P", 6, 1, { name = "Buche", desc = "Un segundo estómago: al entregar te guardas parte de la carga y sales con ella para el siguiente viaje.", max = 5, cost = 45, growth = 5, parent = "fullLoad", icon = "royalFood" }),
 	node("double", "P", 9, 1, { name = "Reparto doble", desc = "A veces una entrega vale el doble.", max = 5, cost = 40, growth = 5, parent = "giant", icon = "anthill" }),
@@ -395,40 +407,40 @@ Config.Tree = {
 	node("nursery", "C", 1, 1, { name = "Guardería", desc = "Espacio para criar obreras. Cada nivel caben más.", max = 28, per = 2, cost = 50, growth = 10.5 }),
 	node("workers", "C", 1, 2, { name = "Obreras", desc = "Traen comida solas, sin que hagas nada.", unit = true, parent = "nursery" }),
 	node("workerSpeed", "C", 2, 1, { name = "Obreras rápidas", desc = "Tus obreras caminan más rápido.", max = 12, per = 2, cost = 35, growth = 10.5, parent = "workers" }),
-	node("workerCarry", "C", 2, 2, { name = "Obreras fuertes", desc = "Cada obrera carga más por viaje.", max = 26, per = 2, cost = 100, growth = 10.5, parent = "workerSpeed" }),
+	node("workerCarry", "C", 2, 2, { name = "Obreras fuertes", desc = "Cada obrera carga más por viaje.", max = 26, per = 2, cost = 100, growth = 10.5, parent = "workerSpeed", yield = 0.02 }),
 	node("storage", "C", 3, 1, { name = "Almacén", desc = "La colonia sigue trabajando mientras no estás.", max = 5, cost = 50, growth = 9, parent = "workerCarry" }),
 	node("nurse", "C", 3, 2, { name = "Nodrizas", desc = "Caben más obreras en la guardería.", max = 5, cost = 55, growth = 4, parent = "storage", icon = "nursery" }),
 	node("barracks", "C", 4, 1, { name = "Cuartel", desc = "Soldados que rompen comida dura y aceleran a toda la colonia.", max = 5, cost = 60, growth = 12, parent = "nurse" }),
-	node("eggs", "C", 4, 2, { name = "Huevos dorados", desc = "Cada cierto tiempo aparece un huevo dorado junto a tu hormiguero. Písalo.", max = 5, cost = 25, growth = 6, parent = "barracks", icon = "nursery" }),
+	node("eggs", "C", 4, 2, { name = "Huevos dorados", desc = "Cada cierto tiempo aparece un huevo dorado junto a tu hormiguero. Písalo.", max = 5, cost = 25, growth = 6, parent = "barracks", icon = "nursery", yield = 0.05 }),
 	node("queen", "C", 5, 1, { name = "Reina ponedora", desc = "La reina cría obreras sola cuando hay comida de sobra, y la colonia rinde más.", max = 1, cost = 70, growth = 1, parent = "eggs" }),
 	node("outpost", "C", 5, 2, { name = "Puesto avanzado", desc = "Un hormiguero pequeño a la entrada de tu zona más honda. Entregas allí, y tus obreras de esa zona también.", max = 1, cost = 120, growth = 1, parent = "queen", icon = "anthill" }),
 	node("fungus", "C", 6, 1, { name = "Jardín de hongos", desc = "Crecen hongos junto a tu hormiguero. Cómete uno y toda la comida vale el doble un rato.", max = 5, cost = 50, growth = 6, parent = "queen", icon = "storage" }),
-	node("legion", "C", 7, 1, { name = "Legión", desc = "La colonia entera trabaja más.", max = 10, cost = 45, growth = 4, parent = "fungus", icon = "barracks" }),
-	node("super", "C", 9, 1, { name = "Supercolonia", desc = "Cada obrera carga más.", max = 5, cost = 50, growth = 6, parent = "legion", icon = "workerCarry" }),
+	node("legion", "C", 7, 1, { name = "Legión", desc = "La colonia entera trabaja más.", max = 10, cost = 45, growth = 4, parent = "fungus", icon = "barracks", yield = 0.03 }),
+	node("super", "C", 9, 1, { name = "Supercolonia", desc = "Cada obrera carga más.", max = 5, cost = 50, growth = 6, parent = "legion", icon = "workerCarry", yield = 0.05 }),
 
 	-- Feromonas
 	node("trail", "F", 1, 1, { name = "Rastro", desc = "Marcas una comida y las obreras van por ella. Cada nivel, un rastro más.", max = 3, costs = { 1200, 4.5e7, 6e13 }, needs = "workers", hint = "{tecla} junto a una comida y mis obreras irán por ella", key = "F", button = "Rastro" }),
 	node("sweet", "F", 2, 1, { name = "Feromona dulce", desc = "Las obreras rinden más en la comida que marcas tú.", max = 5, cost = 70, growth = 5, parent = "trail", icon = "trail" }),
 	node("frenzy", "F", 3, 1, { name = "Frenesí", desc = "Toda la colonia trabaja al triple durante unos segundos.", max = 1, cost = 120, growth = 1, parent = "sweet", hint = "{tecla} y la colonia se vuelve loca", key = "G", button = "Frenesí" }),
-	node("frenzyLen", "F", 4, 1, { name = "Frenesí largo", desc = "El frenesí dura más.", max = 5, cost = 40, growth = 5, parent = "frenzy", icon = "frenzy" }),
+	node("frenzyLen", "F", 4, 1, { name = "Frenesí largo", desc = "El frenesí dura más.", max = 5, cost = 40, growth = 5, parent = "frenzy", icon = "frenzy", yield = 0.03 }),
 	node("smart", "F", 5, 1, { name = "Rastro listo", desc = "Las obreras sin rastro eligen solas la mejor comida, y la comida marcada rinde más.", max = 1, cost = 100, growth = 1, parent = "frenzyLen" }),
 	node("express", "F", 6, 1, { name = "Autopista", desc = "Las obreras tardan menos en cada viaje.", max = 5, cost = 40, growth = 5, parent = "smart", icon = "workerSpeed" }),
 	node("goldFood", "F", 2, 2, { name = "Olfato dorado", desc = "Aparece más comida dorada por el mapa, y la tuya vale todavía más. No es el mordisco dorado: es comida entera de oro.", max = 5, cost = 60, growth = 4, parent = "sweet", icon = "royalFood" }),
-	node("lane", "F", 3, 2, { name = "Senda de feromonas", desc = "Tus rastros brillan en el suelo, de tu hormiguero a la comida. Si caminas por ellos, vas mucho más rápido.", max = 3, cost = 60, growth = 6, parent = "frenzy", icon = "trail" }),
-	node("giantFood", "F", 7, 1, { name = "Comida gigante", desc = "De vez en cuando una comida de la zona donde estás crece enorme: muchas veces más comida, para quien llegue.", max = 3, cost = 50, growth = 8, parent = "express", icon = "royalFood" }),
+	node("lane", "F", 3, 2, { name = "Senda de feromonas", desc = "Tus rastros brillan en el suelo, de tu hormiguero a la comida. Si caminas por ellos, vas mucho más rápido.", max = 3, cost = 60, growth = 6, parent = "frenzy", icon = "trail", yield = 0.06 }),
+	node("giantFood", "F", 7, 1, { name = "Comida gigante", desc = "De vez en cuando una comida de la zona donde estás crece enorme: muchas veces más comida, para quien llegue.", max = 3, cost = 50, growth = 8, parent = "express", icon = "royalFood", yield = 0.06 }),
 	node("hive", "F", 8, 1, { name = "Mente colmena", desc = "El frenesí se recupera antes.", max = 5, cost = 40, growth = 5, parent = "express", icon = "smart" }),
-	node("royalPher", "F", 10, 1, { name = "Feromona real", desc = "El frenesí es todavía más fuerte.", max = 3, cost = 40, growth = 10, parent = "hive", icon = "frenzy" }),
+	node("royalPher", "F", 10, 1, { name = "Feromona real", desc = "El frenesí es todavía más fuerte.", max = 3, cost = 40, growth = 10, parent = "hive", icon = "frenzy", yield = 0.08 }),
 
 	-- Aliadas: bichos y cachivaches que trabajan contigo y se ven en el mundo (ver Config.Allies).
 	-- Un juguete nuevo casi en cada capa; cada nivel se abre con la capa siguiente (per = 1).
 	node("bee", "A", 2, 1, { name = "Abeja mensajera", desc = "Una abeja viene a por tu carga y la lleva volando a tu hormiguero.", max = 6, per = 1, cost = 60, growth = 100, icon = "wings" }),
-	node("magnet", "A", 3, 1, { name = "Imán de migas", desc = "De vez en cuando una comida pequeña de cerca salta entera a tus mandíbulas.", max = 5, per = 1, cost = 50, growth = 100, parent = "bee", icon = "royalFood" }),
+	node("magnet", "A", 3, 1, { name = "Imán de migas", desc = "De vez en cuando una comida pequeña de cerca salta entera a tus mandíbulas.", max = 5, per = 1, cost = 50, growth = 100, parent = "bee", icon = "royalFood", yield = 0.03 }),
 	node("beetle", "A", 4, 1, { name = "Escarabajo de carga", desc = "Un escarabajo te sigue y carga lo que ya no te cabe.", max = 5, per = 1, cost = 50, growth = 100, parent = "magnet", icon = "carry" }),
 	node("escort", "A", 5, 1, { name = "Escolta", desc = "Soldados pequeños que van contigo y muerden lo que muerdes tú.", max = 5, per = 1, cost = 50, growth = 100, parent = "beetle", icon = "barracks" }),
 	node("stomp", "A", 6, 1, { name = "Pisotón", desc = "Un pisotón que muerde toda la comida de alrededor a la vez.", max = 5, per = 1, cost = 60, growth = 100, parent = "escort", icon = "area", hint = "{tecla} y doy un pisotón que muerde todo alrededor", key = "X", button = "Pisotón" }),
-	node("sling", "A", 7, 1, { name = "Tirachinas", desc = "Lanzas toda tu carga de un tirón hasta tu hormiguero.", max = 5, per = 1, cost = 60, growth = 100, parent = "stomp", icon = "speed", hint = "{tecla} y lanzo la carga a mi hormiguero", key = "C", button = "Lanzar" }),
-	node("rain", "A", 8, 1, { name = "Lluvia propia", desc = "Unos segundos de lluvia de migas de tu zona a tu alrededor. Pásales por encima y van a tu carga.", max = 5, per = 1, cost = 60, growth = 100, parent = "sling", icon = "royalFood", hint = "{tecla} y llueven migas a mi alrededor", key = "L", button = "Lluvia" }),
-	node("lens", "A", 9, 1, { name = "Lupa solar", desc = "Una lupa quema de vez en cuando un buen trozo de la comida más grande que tengas cerca.", max = 5, per = 1, cost = 50, growth = 100, parent = "sling", icon = "smart" }),
+	node("sling", "A", 7, 1, { name = "Tirachinas", desc = "Lanzas toda tu carga de un tirón hasta tu hormiguero.", max = 5, per = 1, cost = 60, growth = 100, parent = "stomp", icon = "speed", hint = "{tecla} y lanzo la carga a mi hormiguero", key = "C", button = "Lanzar", yield = 0.05 }),
+	node("rain", "A", 8, 1, { name = "Lluvia propia", desc = "Unos segundos de lluvia de migas de tu zona a tu alrededor. Pásales por encima y van a tu carga.", max = 5, per = 1, cost = 60, growth = 100, parent = "sling", icon = "royalFood", hint = "{tecla} y llueven migas a mi alrededor", key = "L", button = "Lluvia", yield = 0.05 }),
+	node("lens", "A", 9, 1, { name = "Lupa solar", desc = "Una lupa quema de vez en cuando un buen trozo de la comida más grande que tengas cerca.", max = 5, per = 1, cost = 50, growth = 100, parent = "sling", icon = "smart", yield = 0.05 }),
 	node("mega", "A", 11, 1, { name = "Mega crunch", desc = "Si muerdes sin parar, cada cierto número de mordiscos llega uno gigante.", max = 4, per = 1, cost = 60, growth = 100, parent = "lens", icon = "royalBite" }),
 }
 
@@ -466,7 +478,7 @@ Config.Extras = {
 	Buche = { Share = 0.1, Step = 0.05 },
 	-- Radius: radio de entrega. Relay: parte del camino puesto-hormiguero que las obreras aún pagan
 	-- (lo demás lo pasa el puesto en cadena). Mueve mucho el ritmo de la colonia: mira tools/sim.py.
-	Outpost = { Radius = 9, Relay = 0.75 },
+	Outpost = { Radius = 9, Relay = 0.85 },
 	-- Cada Interval s (Step menos por nivel) una comida de tu zona crece: Mult veces su vida (MultStep más por nivel)
 	Giant = { Interval = 60, Step = 10, Mult = 8, MultStep = 2 },
 	-- Durante Duration s caen Count migas (CountStep más por nivel) a Radius studs de ti. Cada una vale
@@ -495,7 +507,7 @@ Config.StorageHours = { 1, 2, 4, 8, 12 }
 local Format = require(script.Parent.Format)
 
 Config.MiniTune = {
-	Span = { 12, 300 }, -- costo de la galería más barata y de la más cara de una capa, a escala de capa 1
+	Span = { 10, 250 }, -- costo de la galería más barata y de la más cara de una capa, a escala de capa 1
 	BranchCost = { M = 1, P = 1.1, C = 1.2, F = 0.9 },
 	Rotate = 4, -- en cada capa los tipos de las galerías sencillas se corren estos huecos
 	GoldCap = 0.2, -- probabilidad máxima de mordisco dorado
@@ -780,10 +792,10 @@ Config.Royal = {
 	{ id = "royalFood", name = "Jalea nutritiva", desc = "Toda la comida vale más.", max = 20, cost = 1, step = 1 },
 	{ id = "royalBite", name = "Mandíbulas reales", desc = "Tu mordida se duplica.", max = 10, cost = 3, step = 3 },
 	{ id = "royalColony", name = "Linaje fuerte", desc = "La colonia entera trabaja más rápido.", max = 10, cost = 3, step = 3 },
-	{ id = "royalStart", name = "Nido heredado", desc = "Empiezas cada partida con obreras.", max = 10, cost = 2, step = 2 },
-	{ id = "royalSpeed", name = "Patas reales", desc = "Caminas más rápido para siempre.", max = 5, cost = 2, step = 1 },
-	{ id = "royalDepth", name = "Planos del nido", desc = "Empiezas cada partida con capas ya excavadas.", max = 7, cost = 4, step = 4, icon = "anthill" },
-	{ id = "royalJelly", name = "Jalea espesa", desc = "Ganas más jalea al enjambrar.", max = 10, cost = 2, step = 2, icon = "royalFood" },
+	{ id = "royalStart", name = "Nido heredado", desc = "Empiezas cada partida con obreras.", max = 10, cost = 2, step = 2, yield = 0.05 },
+	{ id = "royalSpeed", name = "Patas reales", desc = "Caminas más rápido para siempre.", max = 5, cost = 2, step = 1, yield = 0.05 },
+	{ id = "royalDepth", name = "Planos del nido", desc = "Empiezas cada partida con capas ya excavadas.", max = 7, cost = 4, step = 4, icon = "anthill", yield = 0.06 },
+	{ id = "royalJelly", name = "Jalea espesa", desc = "Ganas más jalea al enjambrar.", max = 10, cost = 2, step = 2, icon = "royalFood", yield = 0.05 },
 }
 
 -- Vestidor: se paga con comida y es para siempre, también tras enjambrar.

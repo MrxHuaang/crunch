@@ -200,7 +200,8 @@ local function updateEscort(profile, s, now: number, root: BasePart)
 	end
 	s.escortAt = now + A.Escort.Tick
 	local def = FoodService.defOf(food)
-	local damage = stats.biteDamage * A.Escort.Share * stats.escorts * (if def.hard then stats.hardMult else 1)
+	-- (neighborScale: lo que muerde por ti a las vecinas no pasa de Config.Player.NeighborCap)
+	local damage = stats.biteDamage * A.Escort.Share * stats.escorts * (stats.neighborScale or 1) * (if def.hard then stats.hardMult else 1)
 	local position = food:GetPivot().Position
 	local radius = food:GetAttribute("Radius")
 	local color = food:GetAttribute("Color")
@@ -283,7 +284,7 @@ local function onBite(profile, food: Model, chained: boolean)
 	end
 	s.chain = 0
 	local center = food:GetPivot().Position
-	local damage = stats.biteDamage * stats.megaMult
+	local damage = stats.biteDamage * stats.megaMult * (stats.neighborScale or 1)
 	local def = FoodService.defOf(food)
 	local total = PlayerService.take(profile, food, damage * (if def.hard then stats.hardMult else 1))
 	local nearby = {}

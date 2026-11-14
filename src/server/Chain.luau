@@ -50,7 +50,8 @@ local function onFinalBite(profile, _food: Model, position: Vector3, damage: num
 	-- El primer salto arranca Config.Chain.First mordiscos tuyos (no un pedazo del último, que solía
 	-- ser una miga); cada salto siguiente, Share del anterior. Stats.chainBites cuenta lo mismo.
 	local _ = damage
-	local hit = stats.biteDamage * Config.Chain.First / Config.Chain.Share
+	-- (neighborScale: lo que arranca a las vecinas no pasa de Config.Player.NeighborCap)
+	local hit = stats.biteDamage * Config.Chain.First * (stats.neighborScale or 1) / Config.Chain.Share
 	for _ = 1, jumps do
 		hit *= Config.Chain.Share
 		if hit < 1 or profile.carry >= stats.capacity then

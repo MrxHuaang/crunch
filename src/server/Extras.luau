@@ -428,7 +428,7 @@ local function onBite(profile, food: Model)
 		return
 	end
 	local def = FoodService.defOf(other)
-	local damage = stats.biteDamage * (1 + (profile.combo or 0) * Config.Combo.Step) * stats.jawShare * hardMult(stats, def)
+	local damage = stats.biteDamage * (1 + (profile.combo or 0) * Config.Combo.Step) * stats.jawShare * (stats.neighborScale or 1) * hardMult(stats, def)
 	local position = other:GetPivot().Position
 	local radius = other:GetAttribute("Radius")
 	local color = other:GetAttribute("Color")

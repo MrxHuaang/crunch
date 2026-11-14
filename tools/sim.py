@@ -27,26 +27,35 @@ def env(name, default):
 
 # ─────────────────────────── Config.Player / Run / Milestones ───────────────────────────
 WALK = env("WALK", 16)             # Config.Player.WalkSpeed
-SPEED_STEP = env("SPEED_STEP", 2)      # Config.Player.SpeedStep: velocidad por nivel de Paso rápido
+SPEED_STEP = env("SPEED_STEP", 1.2)      # Config.Player.SpeedStep: velocidad por nivel de Paso rápido
 RUN = 1.35            # Config.Run.Mult (correr de serie con Shift)
 RUN_SHARE = 0.85      # parte del camino que se hace corriendo
 BITE_CD = 0.3         # Config.Player.BiteCooldown
 MIN_CD = 0.18         # Config.Player.MinBiteCooldown: más rápido que esto, Mordisco veloz da comida
 CHEW_STEP = env("CHEW_STEP", 0.88)       # Config.Player.ChewStep: enfriamiento x esto por nivel
 BITE_BASE = 3         # Config.Player.BiteBase: trozos del primer mordisco
-BITE_POWER = env("BITE_POWER", 1.28)     # Config.Player.BitePower: fuerza de mordida por nivel
-BITE_SPLIT = env("BITE_SPLIT", 0.33)     # Config.Player.BiteSplit: parte de la fuerza que es arrancar (el resto, rendir)
+BITE_POWER = env("BITE_POWER", 1.2)     # Config.Player.BitePower: fuerza de mordida por nivel
+BITE_SPLIT = env("BITE_SPLIT", 0.42)     # Config.Player.BiteSplit: parte de la fuerza que es arrancar (el resto, rendir)
 CAPACITY = env("CAPACITY", 42)         # Config.Player.Capacity: trozos de carga sin mejoras (14 mordiscos)
 CARRY_G = env("CARRY_G", 1.08)       # Config.Player.CarryGrowth: carga por nivel de Lomo fuerte
 MIN_LOAD = 12         # Config.Player.MinLoadBites
 CRIT_MULT = 3
 CRIT_STEP, BRUTAL_STEP, VENOM_STEP = 0.05, 0.5, 0.25
 CRIT_CAP = 0.35       # Config.Player.CritCap
+NEIGHBOR_CAP = env("NEIGHBOR_CAP", 2.5)  # Config.Player.NeighborCap: área, cadena, doble mandíbula, escolta y mega juntos
+MAX_WALK = env("MAX_WALK", 45)
+SPEED_YIELD = 0.5
+NEIGHBOR_YIELD = 0.5  # Config.Player.NeighborYield: igual con lo que pasa de NeighborCap  # Config.Player.SpeedYield: comida = (velocidad de las mejoras / techo) ^ esto           # Config.Player.MaxWalk: velocidad al andar como mucho; lo que sobra rinde comida
+# Mejoras con un extra de comida por nivel (Config.Tree yield / Config.Royal yield): las que solas
+# apenas se notaban en el ingreso
+NODE_YIELD = dict(carry=0.01, speed=0.01, crit=0.02, workerCarry=0.02, magnet=0.03, stamina=0.05, lane=0.06, landing=0.05, eggs=0.05, giant=0.06, sling=0.05,
+                  venom=0.06, giantFood=0.06, rain=0.05, lens=0.05, super=0.05, royalPher=0.08, frenzyLen=0.03, legion=0.03)
+ROYAL_YIELD = dict(royalStart=0.05, royalSpeed=0.05, royalDepth=0.06, royalJelly=0.05)
 COMBO_TYPICAL = 8     # Config.Combo.Typical: racha media que se cuenta para la carga
 AREA_SHARE = 0.5     # Config.Player.AreaShare: parte de la mordida que se lleva cada vecina  # Mordida doble, Mordisco brutal, Saliva ácida por nivel
 MS_LEVELS = [10, 25, 50, 75, 100, 125]  # Config.Milestones.Levels
 MS_MULT = 2                             # Config.Milestones.Mult
-MS_CARRY = env("MS_CARRY", 1.25)         # Config.Milestones.CarryMult: la carga salta menos (si no, los viajes se alargan sin fin)
+MS_CARRY = env("MS_CARRY", 1.15)         # Config.Milestones.CarryMult: la carga salta menos (si no, los viajes se alargan sin fin)
 
 
 def ms(level):
@@ -57,7 +66,7 @@ def ms(level):
 STAGE = 110           # Config.StageGrowth
 LAYERS = 14
 K = float(os.environ.get("K", 7.5))       # Config.CostScale
-DIG = float(os.environ.get("DIG", 20000))  # Config.DigBase
+DIG = float(os.environ.get("DIG", 12000))  # Config.DigBase
 WORKER_BASE, WORKER_G = 200, 1.03           # Config.Worker.BaseCost / CostGrowth
 
 
@@ -78,12 +87,12 @@ FOOD_IDS = [
 ]
 HARD = {5, 8, 11, 14, 17, 23, 26, 29, 32, 38}
 BOSS = len(FOOD_IDS) - 1
-SLOT_BITES = [6, 18, 56]      # Config.FoodCurve.Bites: mordiscos de referencia (a media capa)
+SLOT_BITES = [6, 18, 55]      # Config.FoodCurve.Bites: pulsaciones que cuesta al EMPEZAR su capa
 SLOT_VALUE = [1, 1.3, 1.7]    # Config.FoodCurve.SlotValue
 # Config.FoodCurve.ZoneValues: lo que vale un trozo de la comida pequeña de cada zona. Ajustado con
 # este simulador para que cada capa dure unos 30 min jugando activo (las capas 12 y 13 no abren
 # mejoras nuevas: su comida tiene que valer mucho más para no estancarse).
-ZONE_VALUES = [1, 1.5, 2.25, 6.1, 14.5, 21.5, 190, 280, 530, 1350, 4250, 7.2e4, 1.07e5, 1.65e5]
+ZONE_VALUES = [1, 2.4, 4.4, 15.5, 36, 61, 670, 1300, 2100, 3600, 11000, 1.2e5, 5.2e5, 8e5]
 if os.environ.get("VALUE_FIX"):
     ZONE_VALUES = [v * float(x) for v, x in zip(ZONE_VALUES, os.environ["VALUE_FIX"].split(","))]
 BOSS_HP = 20                  # Config.FoodCurve.BossHp (la tarta)
@@ -92,14 +101,20 @@ RESPAWN = [2, 4, 7]  # Config.FoodLayout.Respawn: segundos hasta que vuelve cada
 # Config.FoodCurve.Extra: lo que pega de más a media capa quien va al día (mordida doble, racha,
 # galerías de mordida). Medido con este simulador (--calibrar) y redondeado. HardExtra: la comida dura
 # desde la zona HardFrom, donde ya se tiene Saliva ácida.
-EXTRA = [1, 1, 1.4, 1.9, 2, 2.1, 2.5, 2.7, 2.8, 2.9, 2.9, 3, 3, 3.1]
+# Config.FoodCurve.Press: lo que pega de más una pulsación al empezar cada capa (mordida doble, racha y
+# galerías de mordida) y HardPress: contra comida dura (Saliva ácida, Quebrantahuesos). Medidos con
+# python tools/sim.py --calibrar y redondeados.
+PRESS = [float(x) for x in os.environ.get("PRESS", "1,1.3,2.1,2.5,2.5,2.4,3.2,3.6,3.8,3.9,3.7,4,4.2,4.2").split(",")]
+HARD_PRESS = [float(x) for x in os.environ.get("HARD_PRESS", "1,1,1.4,1.5,1.5,1.8,1.8,2.8,3.5,4.5,5.1,5.1,7,5.6").split(",")]
+EXTRA = [1] * 14
 HARD_EXTRA = [1, 1.5, 1.5, 1.6, 1.3, 1.7, 1.7, 2.6, 2.8, 3.6, 4, 3.2, 4, 3.2]  # Config.FoodCurve.HardExtra
 
 
 def ref_damage(zone):
-    # Mordida de referencia de una zona: la de quien va a media capa con Mordida fuerte al día
-    lvl = 10 * (zone - 1) + 5
-    return BITE_BASE * (BITE_POWER ** lvl * MS_MULT ** ms(lvl)) ** BITE_SPLIT
+    # Lo que arranca una pulsación de quien EMPIEZA la capa con lo de la anterior comprado:
+    # Mordida fuerte al nivel 10 * (zona - 1) por PRESS (galerías, mordida doble y racha de media)
+    lvl = 10 * (zone - 1)
+    return BITE_BASE * (BITE_POWER ** lvl * MS_MULT ** ms(lvl)) ** BITE_SPLIT * PRESS[zone - 1]
 
 
 # Racimos por zona (Config.FoodLayout.Clusters): (veces, pequeñas, medianas, grandes, jefa)
@@ -109,7 +124,7 @@ GARDEN_COUNTS, GARDEN_RESP = [110, 40, 22], [1.5, 3, 5]
 foods = []
 for i, fid in enumerate(FOOD_IDS):
     z, slot = i // 3 + 1, i % 3
-    hp = r2(SLOT_BITES[slot] * ref_damage(z) * EXTRA[z - 1] * (HARD_EXTRA[z - 1] if i in HARD else 1))
+    hp = r2(SLOT_BITES[slot] * ref_damage(z) * (HARD_PRESS[z - 1] if i in HARD else 1))
     v = r2(ZONE_VALUES[z - 1] * SLOT_VALUE[slot])
     count = GARDEN_COUNTS[slot] if z == 1 else PER_ZONE[slot]
     f = dict(id=fid, z=z, slot=slot, hp=hp, v=v, hard=i in HARD, boss=i == BOSS, count=count,
@@ -152,10 +167,10 @@ def dist(zone):
 # ─────────────────────────── Árbol (Config.Tree) ───────────────────────────
 # id: (capa, máximo, niveles por capa, costo a escala de capa 1, crecimiento)
 N = dict(
-    bite=(1, 140, 10, 10, 1.6), chew=(1, 28, 2, 60, 10.5), crit=(2, 5, 0, 30, 3.5), saw=(2, 1, 0, 300, 1),
+    bite=(1, 140, 10, 6, 1.6), chew=(1, 28, 2, 60, 10.5), crit=(2, 5, 0, 30, 3.5), saw=(2, 1, 0, 300, 1),
     combo=(3, 5, 0, 40, 5), reach=(4, 4, 0, 40, 6), area=(5, 3, 0, 40, 8), brutal=(6, 5, 0, 40, 5),
     venom=(8, 5, 0, 40, 5), titan=(8, 5, 0, 50, 8),
-    speed=(1, 42, 3, 15, 4.8), carry=(1, 140, 10, 10, 1.6), sprint=(2, 1, 0, 25, 1), stamina=(2, 5, 0, 20, 4),
+    speed=(1, 42, 3, 15, 4.8), carry=(1, 140, 10, 6, 1.6), sprint=(2, 1, 0, 25, 1), stamina=(2, 5, 0, 20, 4),
     wings=(3, 1, 0, 170, 1), landing=(4, 5, 0, 45, 4), fullLoad=(5, 5, 0, 40, 5), giant=(7, 3, 0, 60, 15),
     double=(9, 5, 0, 40, 5),
     nursery=(1, 28, 2, 50, 10.5), workerCarry=(2, 26, 2, 100, 10.5), workerSpeed=(2, 12, 2, 35, 10.5),
@@ -197,18 +212,18 @@ WINGS_CD, WINGS_FLY = 12, 1.4
 LANDING_CD, LANDING_SPEED = 1.5, 0.08  # Vuelo corto por nivel: segundos menos de alas y velocidad
 GIANT_CARRY = env("GIANT_CARRY", 1.15)          # Config.Tree giant: carga x esto por nivel
 BEETLE = env("BEETLE", 0.08)  # Config.Allies.Beetle.Share
-BARRACKS = env("BARRACKS", 1.2)  # Config.Colony.Barracks: colonia x esto por nivel de Cuartel
-LEGION = env("LEGION", 1.18)      # Config.Colony.Legion: por nivel de Legión
+BARRACKS = env("BARRACKS", 1.15)  # Config.Colony.Barracks: colonia x esto por nivel de Cuartel
+LEGION = env("LEGION", 1.05)      # Config.Colony.Legion: por nivel de Legión
 SUPER = env("SUPER", 1.35)
 SWEET = env("SWEET", 0.4)
 EXPRESS = env("EXPRESS", 0.85)     # Autopista: viaje de las obreras x esto por nivel         # Feromona dulce: la comida marcada rinde esto más por nivel         # Supercolonia: carga de obreras x esto por nivel
 TITAN = env("TITAN", 1.3)         # Mandíbula titán: fuerza de mordida x esto por nivel
 WORKER_SPEED, WORKER_CARRY, WORKER_TURN = env("WORKER_SPEED", 16), env("WORKER_CARRY", 1), 1.5
-WORKER_CARRY_G = env("WORKER_CARRY_G", 1.27)      # Config.Worker.CarryGrowth (Obreras fuertes, por nivel)
+WORKER_CARRY_G = env("WORKER_CARRY_G", 1.18)      # Config.Worker.CarryGrowth (Obreras fuertes, por nivel)
 BEE = dict(Interval=30, Step=4, Min=10, Full=4, Speed=30, SpeedStep=5)
 GOLD_FOOD = (0.02, 0.004, 5, 1.5)   # Chance, ChanceStep, Mult, MultStep
 CHAIN_SHARE, CHAIN_FIRST = 0.7, 3  # Config.Chain: el primer salto pega First mordiscos; cada siguiente, Share del anterior
-WORKER_SPEED_STEP = 0.3   # Obreras rápidas por nivel
+WORKER_SPEED_STEP = env("WORKER_SPEED_STEP", 0.3)   # Obreras rápidas por nivel
 NURSE_CAP = 0.15          # Nodrizas: cupo de guardería por nivel
 QUEEN_MULT, SMART_MULT = 1.15, 1.25  # la reina y el rastro listo también hacen rendir más a la colonia
 MAGNET = dict(Tick=2, Bites=10, Count=1)
@@ -224,14 +239,14 @@ CHARGED = (2.2, 0.6)
 RAIN = dict(Cooldown=45, Step=3, Count=16, CountStep=6, Bites=6)
 GIANT_FOOD = dict(Interval=60, Step=10, Mult=8, MultStep=2)
 TUNNEL_WALK, TUNNEL_TRIP = 15 + DEPTH_IN, 1.2
-OUTPOST_RELAY = 0.75
+OUTPOST_RELAY = env("OUTPOST_RELAY", 0.85)
 OUTPOST_HOP = DEPTH_IN + 10
 LANE_TIME = 0.5
 CHARGE_USE = 0.3
 # Config.Egg (Interval, Seconds, IntervalStep, SecondsStep, MinInterval) y Config.Fungus (Regrow, Duration, Step)
 EGG = (300, 15, 15, 4, 210)
 EGG_FLOOR = 300   # Config.Egg.FloorBites: como poco, tantos mordiscos a la comida pequeña de tu zona
-FUNGUS = (300, 20, 4)
+FUNGUS = (300, 15, 3)
 TROPHY = 0.03
 BITE_TIME = 3              # Colony: una comida pierde como mucho su vida cada 3 s
 AUTO_TARGETS = 3
@@ -252,7 +267,7 @@ SOCIAL_ON = os.environ.get("SOCIAL", "1") == "1"
 CASTE_SHARE, CASTE_EVERY, CASTE_FOODS = 0.6, 20, 3
 
 # ─────────────────────────── Galerías (Config.MiniTune) ───────────────────────────
-MINI_SPAN = (12, 300)
+MINI_SPAN = (10, 250)
 MINI_ROT = 4
 MINI_MID = 5
 MINI_EARLY = [1.5, 1.5, 1.2]
@@ -385,6 +400,11 @@ class Game:
         chew_yield = MIN_CD / cd_raw if cd_raw < MIN_CD else 1
         yield_ = (BITE_POWER ** L["bite"] * MS_MULT ** ms(L["bite"])) ** (1 - BITE_SPLIT) * TITAN ** L["titan"] * 2 ** rb
         yield_ *= chew_yield
+        yield_ *= (self.neighbors() / min(self.neighbors(), NEIGHBOR_CAP)) ** NEIGHBOR_YIELD
+        for k, y in NODE_YIELD.items():
+            yield_ *= (1 + y) ** L[k]
+        for k, y in ROYAL_YIELD.items():
+            yield_ *= (1 + y) ** self.royal.get(k, 0)
         # La carga crece con todo lo que suba la mordida aparte de Mordida fuerte (galerías, mordida
         # doble media): así comprar mordida nunca deja viajes más cortos
         dmg_ratio = dmg / lvl_dmg * self.harvest()
@@ -393,9 +413,11 @@ class Game:
         cap = math.floor(own * (1 + BEETLE * L["beetle"]))
         trophies = min(3 * self.depth, 42)
         food_mult = (1 + 0.5 * self.royal.get("royalFood", 0)) * yield_ * (1 + TROPHY * trophies)
-        sp = (WALK + SPEED_STEP * (L["speed"] + T["speed"])) * (1 + 0.15 * self.royal.get("royalSpeed", 0)) * (1 + LANDING_SPEED * L["landing"])
-        return dict(power=power, dmg=dmg, cd=cd, own=own, cap=cap, food_mult=food_mult, speed=sp,
-                    yield_=yield_)
+        raw_sp = (WALK + SPEED_STEP * (L["speed"] + T["speed"])) * (1 + 0.15 * self.royal.get("royalSpeed", 0)) * (1 + LANDING_SPEED * L["landing"])
+        sp = min(raw_sp, MAX_WALK)
+        food_mult *= (raw_sp / sp) ** SPEED_YIELD  # lo que pasa del techo rinde comida (Stats.derive)
+        return dict(power=power, dmg=dmg, cd=cd, own=own, cap=cap, food_mult=food_mult, speed=sp, raw_speed=raw_sp,
+                    yield_=yield_, lvl_dmg=lvl_dmg)
 
     def crit_avg(self):
         # Lo que pega de media un mordisco por la mordida doble (Stats.critAverage)
@@ -405,10 +427,18 @@ class Game:
 
     def harvest(self):
         """Stats.harvest: trozos que entran de media por cada mordisco tuyo, en mordiscos normales.
-        Mordida doble, racha, área, doble mandíbula, cadena, escolta y mega crunch. La carga se mide en
-        mordiscos: crece con esto, así que todo lo que hace morder mejor llena viajes más ricos."""
+        Mordida doble y racha, por lo que arrancan a las vecinas área, doble mandíbula, cadena, escolta y
+        mega crunch (como mucho NEIGHBOR_CAP veces: más allá, en vez de comerse el racimo de golpe,
+        rinden comida). La carga se mide en mordiscos: crece con esto."""
+        return self.crit_avg() * self.combo_avg() * min(self.neighbors(), NEIGHBOR_CAP)
+
+    def neighbor_scale(self):
+        n = self.neighbors()
+        return min(n, NEIGHBOR_CAP) / n
+
+    def neighbors(self):
         L, T = self.L, self.T
-        h = self.crit_avg() * self.combo_avg()
+        h = 1.0
         if L["area"]:
             h *= 1 + AREA_SHARE * min(3, L["area"])
         if L["doubleJaw"]:
@@ -477,16 +507,17 @@ class Game:
             # Lo que entra en la carga por mordisco: lo arrancado a la comida mordida (con el sobrante
             # del último) más el área (media mordida a las vecinas del racimo) y la doble mandíbula
             harvest = f["hp"] / per_food
+            ns = self.neighbor_scale()
             if L["area"]:
                 r = 4 + 3 * L["area"]
-                harvest += AREA_SHARE * dmg * hard * min(3, (r / FOOD_HOP) ** 2 * 0.6)
+                harvest += AREA_SHARE * dmg * hard * min(3, (r / FOOD_HOP) ** 2 * 0.6) * ns
             if L["doubleJaw"]:
-                harvest += (JAW[0] + JAW[1] * (L["doubleJaw"] - 1)) * dmg * hard
+                harvest += (JAW[0] + JAW[1] * (L["doubleJaw"] - 1)) * dmg * hard * ns
             # Mordida en cadena: al terminar una comida el rayo salta a las de al lado
             if L["chain"]:
                 jumps = L["chain"] + T["chain"]
                 chain = sum(min(CHAIN_FIRST * CHAIN_SHARE ** (k - 1) * dmg, f["hp"]) for k in range(1, int(jumps) + 1)) * 0.9
-                harvest += chain / per_food
+                harvest += chain / per_food * ns
             eaten_here = pieces / f["hp"]
             bites += pieces / harvest
             foods_eaten += eaten_here
@@ -514,9 +545,9 @@ class Game:
         if allies:
             per_sec = 0.0
             if L["escort"]:
-                per_sec += ESCORT["Share"] * L["escort"] * dmg / ESCORT["Tick"]
+                per_sec += ESCORT["Share"] * L["escort"] * dmg / ESCORT["Tick"] * self.neighbor_scale()
             if L["mega"]:
-                per_sec += (MEGA["Mult"] + MEGA["MultStep"] * (L["mega"] - 1)) * dmg / ((MEGA["Every"] - MEGA["Step"] * (L["mega"] - 1)) * cd)
+                per_sec += (MEGA["Mult"] + MEGA["MultStep"] * (L["mega"] - 1)) * dmg / ((MEGA["Every"] - MEGA["Step"] * (L["mega"] - 1)) * cd) * self.neighbor_scale()
             if L["stomp"]:
                 per_sec += STOMP["Mult"] * dmg * self.harvest() * 3 / (STOMP["Cooldown"] - STOMP["Step"] * (L["stomp"] - 1))
             if L["magnet"]:
@@ -816,6 +847,28 @@ def measure(g, opts, c, k, key):
     return dict(key=key, label=label(k), layer=g.depth, t=g.t, gain=mine[0], roi=mine[1], best=best, cost=mine[2])
 
 
+def metrics(g):
+    """Las cifras de la hormiga que se pueden mirar en partida (Stats.derive): mordida, mordiscos
+    normales por comida de la zona de su capa (vida / mordida), pulsaciones por comida (con la mordida
+    doble y la racha de media, y Saliva ácida contra la dura), pulsaciones por viaje (carga / lo que entra
+    por pulsación, Stats.tripBites) y velocidad al andar (la de las mejoras y la que se usa, con techo)."""
+    st = g.stats()
+    z = g.depth
+    press = g.crit_avg() * g.combo_avg()
+    hard_mult = (1 + VENOM_STEP * g.L["venom"]) * max(1, g.pv("crusher"))
+    normal, presses = [], []
+    for f in foods[(z - 1) * 3:(z - 1) * 3 + 3]:
+        if f["boss"]:
+            normal.append(None)
+            presses.append(None)
+            continue
+        hm = hard_mult if f["hard"] else 1
+        normal.append(math.ceil(f["hp"] / st["dmg"]))
+        presses.append(math.ceil(f["hp"] / (st["dmg"] * press * hm)))
+    return dict(dmg=st["dmg"], normal=normal, presses=presses, trip=st["cap"] / (st["dmg"] * g.harvest()),
+                raw_speed=st["raw_speed"], speed=st["speed"], harvest=g.harvest())
+
+
 def label(k):
     if isinstance(k, int):
         m = minis[k]
@@ -832,6 +885,7 @@ def play(active, royal=None, stop_depth=LAYERS, audit=None, until_all=False):
     last_buy = 0.0
     seen = set()
     entry = {1: g.trip(g.stats(), 1)}  # viaje a la zona de la capa al empezarla (mordiscos por comida y por viaje)
+    m_entry = {1: metrics(g)}
     while True:
         opts = g.options()
         if not opts:
@@ -867,25 +921,29 @@ def play(active, royal=None, stop_depth=LAYERS, audit=None, until_all=False):
             first_worker = g.t
         cur["buys"].append((g.t, wait, k))
         cur.setdefault("trips", []).append((g.t, g.trip(g.stats(), g.depth)))
+        cur.setdefault("metrics", []).append((g.t, metrics(g)))
         if k == "dig":
             st = g.stats()
             _, _, tr_before, _ = g.income()
             layers[g.depth] = dict(start=cur["start"], end=g.t, buys=cur["buys"], parts=cur["parts"] or {},
-                                   trip=tr_before, stats=st, trips=cur.get("trips", []))
+                                   trip=tr_before, stats=st, trips=cur.get("trips", []), metrics=cur.get("metrics", []))
             cur = dict(start=g.t, buys=[], parts=None)
         g.apply(k)
         if k == "dig":
             _, _, tr_new, st_new = g.income()
             entry[g.depth] = g.trip(st_new, g.depth)
+            m_entry[g.depth] = metrics(g)
         if g.t > 3600 * 500:
             break
     # Última capa: hasta tenerlo todo comprado
     if until_all and cur["buys"]:
         _, _, tr_last, st_last = g.income()
         layers[g.depth] = dict(start=cur["start"], end=g.t, buys=cur["buys"], parts=cur["parts"] or {},
-                               trip=tr_last, stats=st_last, next_trip=None, trips=cur.get("trips", []))
+                               trip=tr_last, stats=st_last, next_trip=None, trips=cur.get("trips", []),
+                               metrics=cur.get("metrics", []))
     for d in layers:
         layers[d]["entry"] = entry.get(d)
+        layers[d]["m_entry"] = m_entry.get(d)
     return g, layers, first_buy, first_worker
 
 
@@ -906,11 +964,17 @@ def layer_rows(layers):
         trips = info.get("trips") or [(info["start"], trip)]
         mid_trip = min(trips, key=lambda x: abs(x[0] - mid))[1] or trip
         bpf = mid_trip["bites_per_food"] if mid_trip else {}
+        ms_list = info.get("metrics") or []
+        m_mid = min(ms_list, key=lambda x: abs(x[0] - mid))[1] if ms_list else info.get("m_entry")
+        m_all = [x[1] for x in ms_list]
         rows.append(dict(layer=d, start=info["start"], dur=dur, n=len(buys), longest=longest,
                          early=early / max(1, len(buys)), parts={k: v / tot for k, v in parts.items()},
                          bpf=bpf, trip_bites=trip["trip_bites"] if trip else 0,
                          trip_time=trip["time"] if trip else 0, walk=trip["walk"] if trip else 0,
-                         zone=trip["zone"] if trip else 0, entry_trip=trip["trip_bites"] if trip else None))
+                         zone=trip["zone"] if trip else 0, entry_trip=trip["trip_bites"] if trip else None,
+                         m_entry=info.get("m_entry"), m_mid=m_mid,
+                         max_trip=max([m["trip"] for m in m_all] or [0]),
+                         max_speed=max([m["speed"] for m in m_all] or [0])))
     return rows
 
 
@@ -928,6 +992,20 @@ def print_profile(name, rows, first_buy, first_worker):
                          ("mano", "colonia", "ayudantes", "extra", "resto", "misiones", "castas", "social"))
               + f"   {bpf.get(0, '-'):>4} {bpf.get(1, '-'):>4} {bpf.get(2, '-'):>4}"
               + f"   {r['trip_bites']:6.1f}  {r['trip_time']:7.1f}  {r['walk']:6.1f}")
+
+
+def print_metrics(rows):
+    print("   Cifras de la hormiga (zona de su capa). inicio = al excavarla con lo de antes comprado; media = a mitad de capa")
+    print("   capa | inicio: mordida  normales p/m/g    pulsaciones p/m/g  puls/viaje  vel(mejoras->usada) | media: mordida  normales p/m/g    pulsaciones p/m/g  puls/viaje  vel")
+
+    def fmt(m):
+        if not m:
+            return " " * 60
+        n = "/".join("-" if x is None else str(x) for x in m["normal"])
+        q = "/".join("-" if x is None else str(x) for x in m["presses"])
+        return f"{m['dmg']:9.3g}  {n:>15s}  {q:>15s}  {m['trip']:9.1f}  {m['raw_speed']:5.0f}->{m['speed']:3.0f}"
+    for r in rows:
+        print(f"   {r['layer']:4d} | {fmt(r['m_entry'])} | {fmt(r['m_mid'])}")
 
 
 CHECKS = []
@@ -977,18 +1055,22 @@ def verify(active_rows, casual_rows, fb_a, fw_a, reb):
         check(0.20 <= q <= 0.45, f"capa {L}: misiones, extra de ~25-35 % sobre lo ganado a mano ({100 * q:.0f} %)")
         for k in ("ayudantes", "misiones", "castas", "resto"):
             check(p.get(k, 0) <= 0.30, f"capa {L}: {k} no trivializa (<= 30 %, {100 * p.get(k, 0):.0f} %)")
+    names = ("pequeña", "mediana", "grande")
+    mid_ok = ((2.5, 6), (7, 16), (20, 45))   # 3-5 / 8-14 / 25-40 con un poco de holgura
+    entry_max = (10, 28, 80)                 # al entrar, como mucho ~el doble
     for L in sorted(a):
         r = a[L]
-        bpf = r["bpf"]
-        # Al entrar en la capa L (ya en su zona)
-        if bpf.get(0):
-            check(2 <= bpf[0] <= 6, f"capa {L}: pequeña 3-5 mordiscos ({bpf[0]})")
-        if bpf.get(1):
-            check(6 <= bpf[1] <= 16, f"capa {L}: mediana 8-14 mordiscos ({bpf[1]})")
-        if bpf.get(2):
-            check(18 <= bpf[2] <= 45, f"capa {L}: grande 25-40 mordiscos ({bpf[2]})")
-        tb = r.get("entry_trip") or r["trip_bites"]
-        check(12 <= tb <= 25.5, f"capa {L}: viaje de 12-25 mordiscos al empezar ({tb:.1f})")
+        me, mm = r["m_entry"], r["m_mid"]
+        for i in range(3):
+            if me and me["presses"][i] is not None:
+                check(me["presses"][i] <= entry_max[i], f"capa {L}: {names[i]} al empezar <= {entry_max[i]} pulsaciones ({me['presses'][i]})")
+            if mm and mm["presses"][i] is not None and L < LAYERS:
+                lo, hi = mid_ok[i]
+                check(lo <= mm["presses"][i] <= hi, f"capa {L}: {names[i]} a media capa {lo:g}-{hi:g} pulsaciones ({mm['presses'][i]})")
+        if me:
+            check(12 <= me["trip"] <= 25.5, f"capa {L}: viaje de 12-25 pulsaciones al empezar ({me['trip']:.1f})")
+        check(r["max_trip"] <= 40, f"capa {L}: viaje de 40 pulsaciones como mucho ({r['max_trip']:.1f})")
+        check(r["max_speed"] <= MAX_WALK + 0.01, f"capa {L}: velocidad al andar <= {MAX_WALK:g} ({r['max_speed']:.0f})")
     if reb:
         for R, gain, jelly in reb:
             check(jelly >= 1, f"enjambre en capa {R}: da jalea ({jelly})")
@@ -1020,7 +1102,32 @@ def rebirth_check(active):
     return out
 
 
+def calibrate():
+    """Mide al empezar cada capa lo que pega de más una pulsación (galerías, mordida doble, racha) y contra
+    la comida dura: es Config.FoodCurve.Press / HardPress."""
+    g = Game(0.85)
+    press, hard = [1.0], [1.0]
+    while g.depth < LAYERS:
+        opts = g.options()
+        c, k = min(opts, key=lambda o: o[0])
+        total = g.income()[0]
+        if g.food < c:
+            g.t += (c - g.food) / total
+            g.food = c
+        g.food -= c
+        g.apply(k)
+        if k == "dig":
+            st = g.stats()
+            press.append(st["dmg"] / st["lvl_dmg"] * g.crit_avg() * g.combo_avg())
+            hard.append((1 + VENOM_STEP * g.L["venom"]) * max(1, g.pv("crusher")))
+    print("PRESS=" + ",".join(f"{x:.2g}" for x in press))
+    print("HARD_PRESS=" + ",".join(f"{x:.2g}" for x in hard))
+
+
 def main():
+    if "--calibrar" in ARGS:
+        calibrate()
+        return
     profiles = [("activo (85 %)", 0.85), ("casual (45 %)", 0.45), ("ausente (10 %)", 0.10)]
     if "--perfil" in ARGS:
         v = float(ARGS[ARGS.index("--perfil") + 1])
@@ -1032,6 +1139,8 @@ def main():
         rows = layer_rows(layers)
         results[f] = (rows, fb, fw, g)
         print_profile(name, rows, fb, fw)
+        if f == 0.85 or len(profiles) == 1:
+            print_metrics(rows)
         print(f"   todo comprado: {g.t / 3600:.1f} h; obreras {g.workers}; galerías {len(g.owned)}")
     print("\nComida por zona (vida, valor, mordiscos de referencia a media capa):")
     for z in range(1, LAYERS + 1):

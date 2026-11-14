@@ -168,16 +168,36 @@ function Stats.derive(nodes, royal, depth: number?, minis: { [string]: boolean }
 	local escorts = lvl(nodes, "escort")
 	local megaEvery = ramp(lvl(nodes, "mega"), ALLY.Mega.Every, -ALLY.Mega.Step)
 	local megaMult = ramp(lvl(nodes, "mega"), ALLY.Mega.Mult, ALLY.Mega.MultStep)
-	-- Trozos que entran de media por cada mordisco tuyo, en mordiscos normales: mordida doble, racha,
-	-- área, doble mandíbula, cadena, escolta y mega crunch. La carga crece con esto: todo lo que te
-	-- hace morder mejor llena viajes más ricos en vez de viajes más cortos.
-	local harvest = (1 + critChance * (critMult - 1)) * (1 + Config.Combo.Step * math.min(10 * lvl(nodes, "combo"), Config.Combo.Typical))
-	harvest *= 1 + PLAYER.AreaShare * math.min(3, area)
-	harvest *= 1 + jawShare
-	harvest *= 1 + Stats.chainBites(chainJumps) / Config.Chain.Typical
-	harvest *= 1 + ALLY.Escort.Share * escorts * PLAYER.BiteCooldown / ALLY.Escort.Tick
+	-- Trozos que entran de media por cada mordisco tuyo, en mordiscos normales: mordida doble y racha
+	-- (en la comida mordida), por lo que arrancan a las de al lado área, doble mandíbula, cadena, escolta
+	-- y mega crunch. Eso último, como mucho NeighborCap veces: más allá, en vez de comerse el racimo de
+	-- una pulsación, rinde comida. La carga crece con esto: todo lo que te hace morder mejor llena
+	-- viajes más ricos, no viajes más cortos (las pulsaciones por viaje no cambian).
+	local neighbors = 1 + PLAYER.AreaShare * math.min(3, area)
+	neighbors *= 1 + jawShare
+	neighbors *= 1 + Stats.chainBites(chainJumps) / Config.Chain.Typical
+	neighbors *= 1 + ALLY.Escort.Share * escorts * PLAYER.BiteCooldown / ALLY.Escort.Tick
 	if megaEvery > 0 then
-		harvest *= 1 + (megaMult - 1) / megaEvery
+		neighbors *= 1 + (megaMult - 1) / megaEvery
+	end
+	local neighborScale = math.min(neighbors, PLAYER.NeighborCap) / neighbors
+	foodMult *= (neighbors / math.min(neighbors, PLAYER.NeighborCap)) ^ PLAYER.NeighborYield
+	local harvest = (1 + critChance * (critMult - 1)) * (1 + Config.Combo.Step * math.min(10 * lvl(nodes, "combo"), Config.Combo.Typical))
+		* math.min(neighbors, PLAYER.NeighborCap)
+	-- Velocidad: con techo; lo que las mejoras den de más se vuelve comida
+	local rawWalk = Stats.walkSpeed(lvl(nodes, "speed") + m("speed"), lvl(royal, "royalSpeed"), lvl(nodes, "landing"))
+	local walkSpeed = math.min(rawWalk, PLAYER.MaxWalk)
+	foodMult *= (rawWalk / walkSpeed) ^ PLAYER.SpeedYield
+	-- Mejoras con yield: cada nivel, toda tu comida x(1 + yield) (Config.Tree y Config.Royal)
+	for _, def in Config.Tree do
+		if def.yield then
+			foodMult *= (1 + def.yield) ^ lvl(nodes, def.id)
+		end
+	end
+	for _, def in Config.Royal do
+		if def.yield then
+			foodMult *= (1 + def.yield) ^ lvl(royal, def.id)
+		end
 	end
 	-- Carga: la de Lomo fuerte (y galerías de carga) por todo lo que sube la mordida aparte de Mordida
 	-- fuerte. Suelo: un viaje nunca se llena con menos de MinLoadBites mordiscos normales. Con las
@@ -199,6 +219,9 @@ function Stats.derive(nodes, royal, depth: number?, minis: { [string]: boolean }
 		biteDamage = biteDamage,
 		biteYield = biteYield, -- ya va dentro de foodMult; es para enseñarlo
 		harvest = harvest, -- trozos por mordisco de media, en mordiscos normales (la carga crece con esto)
+		-- Por cuánto se multiplica lo que arrancan a las vecinas área, doble mandíbula, cadena, escolta y
+		-- mega crunch para no pasar de Config.Player.NeighborCap (1 si no se llega)
+		neighborScale = neighborScale,
 		tripBites = ownCapacity / math.max(biteDamage * harvest, 1), -- mordiscos normales que caben en un viaje
 		biteCooldown = biteCooldown,
 		hardMult = (1 + PLAYER.VenomStep * lvl(nodes, "venom")) * math.max(1, perk("crusher")),
@@ -216,7 +239,8 @@ function Stats.derive(nodes, royal, depth: number?, minis: { [string]: boolean }
 		ownCapacity = ownCapacity,
 		capacity = math.floor(ownCapacity * (1 + ALLY.Beetle.Share * beetle)),
 		beetleShare = ALLY.Beetle.Share * beetle,
-		walkSpeed = Stats.walkSpeed(lvl(nodes, "speed") + m("speed"), lvl(royal, "royalSpeed"), lvl(nodes, "landing")),
+		walkSpeed = walkSpeed,
+		rawWalkSpeed = rawWalk, -- la que darían las mejoras sin techo (lo que sobra rinde comida)
 		hasSprint = lvl(nodes, "sprint") > 0,
 		sprintDuration = Config.Sprint.Duration + Config.Sprint.StaminaStep * lvl(nodes, "stamina") + m("turbo"),
 		hasWings = lvl(nodes, "wings") > 0,
@@ -474,7 +498,11 @@ local EFFECT = {
 		return "Tu comida rinde " .. times(Config.Player.TitanPower ^ l)
 	end,
 	speed = function(l)
-		return "Velocidad " .. decimal(Config.Player.WalkSpeed + Config.Player.SpeedStep * l)
+		local raw = Config.Player.WalkSpeed + Config.Player.SpeedStep * l
+		if raw <= Config.Player.MaxWalk then
+			return "Velocidad " .. decimal(raw)
+		end
+		return "Velocidad " .. Config.Player.MaxWalk .. " (el tope); lo que sobra: comida " .. times((raw / Config.Player.MaxWalk) ^ Config.Player.SpeedYield)
 	end,
 	carry = function(l)
 		return "Carga " .. times(Stats.capacity(l) / Config.Player.Capacity) .. " (sin mejoras caben "
@@ -658,7 +686,13 @@ local EFFECT = {
 
 function Stats.effect(id: string, level: number): string
 	local fn = EFFECT[id]
-	return if fn then fn(level) else ""
+	local text = if fn then fn(level) else ""
+	-- Las mejoras con yield dan además comida en cada nivel (Config.Tree / Config.Royal)
+	local def = Config.NodeById[id] or Config.RoyalById[id]
+	if def and def.yield and level > 0 then
+		text ..= " · comida " .. times((1 + def.yield) ^ level)
+	end
+	return text
 end
 
 return Stats

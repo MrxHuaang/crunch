@@ -289,7 +289,7 @@ local function onBite(player: Player, food: any)
 			if i > 3 or profile.carry >= stats.capacity then
 				break
 			end
-			PlayerService.take(profile, item.food, math.ceil(damage * (stats.areaShare or 0.5)), worth)
+			PlayerService.take(profile, item.food, math.ceil(damage * (stats.areaShare or 0.5) * (stats.neighborScale or 1)), worth)
 		end
 	end
 
