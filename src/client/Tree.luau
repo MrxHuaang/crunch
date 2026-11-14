@@ -48,9 +48,6 @@ local jellyLabel: TextLabel
 local card, cardParts
 local swarmFace: TextButton
 local swarmSub: TextLabel
-local cheapHolder: Frame
-local cheapLabel: TextLabel
-local cheapScale: UIScale
 
 local function at(object: GuiObject, x: number, y: number, w: number?, h: number?)
 	object.Position = UDim2.fromOffset(x, y)
@@ -161,6 +158,15 @@ local function buildNode(def)
 	local parent = def.parent and Config.NodeById[def.parent]
 	if parent then
 		view.tunnel = tunnel(parent.x, parent.y, def.x, def.y)
+		-- Cámara de paso: su túnel queda dentro del de otra cámara del mismo pozo (p. ej. la fila 2
+		-- entre dos cámaras de la fila 1). Sin excavar va por debajo, para no cortar el pozo.
+		for _, other in Config.Tree do
+			local up = other.parent and Config.NodeById[other.parent]
+			if other ~= def and up and other.x == def.x and up.x == def.x and math.min(up.y, other.y) <= math.min(parent.y, def.y) and math.max(up.y, other.y) >= math.max(parent.y, def.y) then
+				view.spur = true
+				break
+			end
+		end
 	else
 		view.tunnel = tunnel(def.x, GALLERY, def.x, def.y)
 	end
@@ -190,11 +196,14 @@ local function buildMinis()
 		button.Text = ""
 		button.AnchorPoint = Vector2.new(0.5, 0.5)
 		button.Position = UDim2.fromOffset(def.x, def.y)
-		button.Size = UDim2.fromOffset(MINI, MINI)
+		-- Las reglas con nombre (tercera de cada fila) son cuadradas de esquina suave y un poco más grandes
+		local isPerk = def.kind == "perk"
+		local size = if isPerk then MINI + 8 else MINI
+		button.Size = UDim2.fromOffset(size, size)
 		button.BorderSizePixel = 0
 		button.BackgroundColor3 = Comic.DirtDark
 		button.ZIndex = 5
-		Comic.round(button)
+		Comic.round(button, if isPerk then 16 else nil)
 		-- Con la unión en inglete el borde sale cuadrado aunque la caja sea redonda
 		local stroke = Comic.ink(button, 3, true)
 		stroke.LineJoinMode = Enum.LineJoinMode.Round
@@ -638,24 +647,6 @@ local function build()
 			scrollTo(CONTENT)
 		end
 	end)
-
-	-- Abajo a la izquierda: compra de golpe las galerías baratas (como mucho la mitad de tu comida)
-	local holder, cheapFace = Comic.button(face, UDim2.fromOffset(300, 50), Comic.Yellow, 5)
-	holder.AnchorPoint = Vector2.new(0.5, 0.5) -- para que el rebote crezca desde el centro
-	at(holder, 40 + 150, H - 78 + 25)
-	holder.ZIndex = 41
-	holder.Shadow.ZIndex = 41
-	holder.Visible = false
-	cheapFace.ZIndex = 42
-	cheapLabel = Comic.label(cheapFace, "", Comic.Display, 26, Comic.Ink)
-	cheapLabel.Size = UDim2.fromScale(1, 1)
-	cheapLabel.ZIndex = 43
-	cheapScale = Instance.new("UIScale")
-	cheapScale.Parent = holder
-	cheapFace.MouseButton1Click:Connect(function()
-		remotes.Buy:FireServer("minis")
-	end)
-	cheapHolder = holder
 end
 
 local function paintChamber(view, state: string, levelText: string, affordable: boolean)
@@ -674,7 +665,11 @@ local function paintChamber(view, state: string, levelText: string, affordable: 
 	view.stroke.Color = if isSelected then Comic.Red else Comic.Ink
 	view.stroke.Thickness = if isSelected then 8 else 5
 	if view.tunnel then
-		view.tunnel.BackgroundColor3 = if state == "locked" or state == "empty" then Comic.DirtDark else Comic.DirtLight
+		local dark = state == "locked" or state == "empty"
+		view.tunnel.BackgroundColor3 = if dark then Comic.DirtDark else Comic.DirtLight
+		if view.spur then
+			view.tunnel.ZIndex = if dark then 2 else 4
+		end
 	end
 	if view.name then
 		view.name.TextTransparency = if state == "locked" then 0.45 else 0
@@ -773,10 +768,19 @@ function Tree.refresh(): boolean
 		paintChamber(royalViews[def.id], if maxed then "max" elseif level == 0 then "empty" else "owned", level .. "/" .. def.max, affordable)
 	end
 
-	-- Galerías: lo que compraría "Comprar lo barato" y la más barata pendiente
+	-- Galerías: ¿hay alguna abierta que te puedas pagar?
 	local minis = State.minis()
-	local cheapCount, cheapest = Stats.cheapMinis(minis, depth, food * Config.MiniTune.BuyAllShare)
-	anyAffordable = anyAffordable or (cheapest ~= nil and food >= cheapest.cost)
+	if not anyAffordable then
+		for _, def in Config.MinisByCost do
+			if def.cost > food then
+				break
+			end
+			if not minis[def.id] and Stats.miniOpen(def, minis, depth) then
+				anyAffordable = true
+				break
+			end
+		end
+	end
 
 	local digCost = Stats.digCost(depth)
 	local canDig = food >= digCost
@@ -816,10 +820,6 @@ function Tree.refresh(): boolean
 			row.frame.BackgroundColor3 = if state == "dug" then Comic.DirtLight else Comic.DirtDark
 		end
 	end
-	cheapHolder.Visible = cheapCount > 0
-	if cheapCount > 0 then
-		cheapLabel.Text = "Comprar lo barato (" .. cheapCount .. ")"
-	end
 
 	foodLabel.Text = "Comida " .. Format.short(food)
 	jellyLabel.Text = "Jalea " .. Format.short(jelly)
@@ -858,16 +858,33 @@ function Tree.refresh(): boolean
 			local def = Config.MiniById[selected.id]
 			local owned = minis[def.id] == true
 			local open = Stats.miniOpen(def, minis, depth)
-			local effect = if owned
-				then "Ya es tuya. En total: " .. Config.miniText(def.kind, Stats.miniTotal(stats, def), def.layer)
-				elseif depth < def.layer then "Excava antes hasta la capa " .. def.layer
-				elseif not open then "Excava antes la cámara de su izquierda"
-				else "Ahora: " .. Config.miniText(def.kind, Stats.miniTotal(stats, def), def.layer) .. "\nLuego: " .. Config.miniText(def.kind, Stats.miniTotal(stats, def, true), def.layer)
+			local isPerk = def.kind == "perk"
+			local desc, effect
+			if isPerk then
+				-- Regla con nombre: la regla con la fuerza que tendrá (o tiene) y su nivel
+				local level = Stats.miniTotal(stats, def)
+				local after = if owned then level else level + 1
+				desc = Config.perkText(def.perk, after)
+				effect = if owned
+					then "Tuya. La regla va por el nivel " .. level .. ": cada galería suya la sube uno."
+					elseif depth < def.layer then "Excava antes hasta la capa " .. def.layer
+					elseif not open then "Excava antes la cámara de su izquierda"
+					elseif level > 0 then "Ahora: nivel " .. level .. " (" .. Config.perkShort(def.perk, level) .. ")\nLuego: nivel " .. after .. " (" .. Config.perkShort(def.perk, after) .. ")"
+					else "Regla nueva: nivel 1"
+			else
+				-- Galería sencilla: su número real (la mordida fija ya multiplicada por Mandíbula titán, etc.)
+				desc = Config.miniText(def.kind, def.amount * (stats.miniScale[def.kind] or 1))
+				effect = if owned
+					then "Ya es tuya. En total: " .. Stats.miniLine(stats, def)
+					elseif depth < def.layer then "Excava antes hasta la capa " .. def.layer
+					elseif not open then "Excava antes la cámara de su izquierda"
+					else "Ahora: " .. Stats.miniLine(stats, def) .. "\nLuego: " .. Stats.miniLine(stats, def, true)
+			end
 			showCard(def.x, def.y, false, {
 				icon = Assets.Icons[def.icon] or Assets.Icons.anthill,
 				name = def.name,
-				branch = def.branch .. " · galería de la capa " .. def.layer,
-				desc = def.desc,
+				branch = def.branch .. (if isPerk then " · regla de la capa " else " · galería de la capa ") .. def.layer,
+				desc = desc,
 				effect = effect,
 				buyText = if owned or not open then nil elseif food >= def.cost then "Excavar por " .. Format.short(def.cost) else "Faltan " .. Format.short(def.cost - food),
 				canBuy = food >= def.cost,
@@ -920,22 +937,176 @@ function Tree.refresh(): boolean
 	return anyAffordable
 end
 
+-- Historial de niveles: el nivel de antes y el de ahora de cada cámara (atributos N_ y R_), para
+-- celebrar "viejo → nuevo" y detectar hitos. El atributo suele llegar justo antes del aviso
+-- "Bought"; si llega después, la celebración espera un instante.
+local levelBefore: { [string]: number } = {}
+local levelNow: { [string]: number } = {}
+local levelChangedAt: { [string]: number } = {}
+
+local function watchLevels()
+	local localPlayer = Players.LocalPlayer
+	for name, value in localPlayer:GetAttributes() do
+		local head = string.sub(name, 1, 2)
+		if head == "N_" or head == "R_" then
+			levelNow[name] = tonumber(value) or 0
+		end
+	end
+	localPlayer.AttributeChanged:Connect(function(name: string)
+		local head = string.sub(name, 1, 2)
+		if head == "N_" or head == "R_" then
+			levelBefore[name] = levelNow[name] or 0
+			levelNow[name] = tonumber(localPlayer:GetAttribute(name)) or 0
+			levelChangedAt[name] = os.clock()
+		end
+	end)
+end
+
+-- Nivel de antes y de ahora de una cámara si cambió hace poco (si no, antes = nil).
+function Tree.levelChange(kind: string, id: string): (number?, number)
+	local key = (if kind == "royal" then "R_" else "N_") .. tostring(id)
+	local now = levelNow[key] or 0
+	local at = levelChangedAt[key]
+	if at and os.clock() - at < 2 and (levelBefore[key] or 0) < now then
+		return levelBefore[key] or 0, now
+	end
+	return nil, now
+end
+
+-- Hitos que lleva un nivel (Stats.milestones la añade otra parte del juego: puede no existir aún)
+function Tree.milestones(level: number): number
+	local fn = (Stats :: any).milestones
+	if type(fn) ~= "function" then
+		return 0
+	end
+	local ok, count = pcall(fn, level)
+	return if ok then tonumber(count) or 0 else 0
+end
+
+-- Texto del premio de un hito (Config.Milestones, si dice cuánto multiplica)
+local function milestoneText(): string
+	local m = (Config :: any).Milestones
+	local mult = type(m) == "table" and tonumber(m.Mult or m.mult or m.Multiplier or m.multiplier) or nil
+	return if mult then "¡HITO! ×" .. (if mult == math.floor(mult) then tostring(math.floor(mult)) else tostring(mult)) else "¡HITO!"
+end
+
+-- Anillo de tinta de color que se abre desde la cámara y un fogonazo dentro de ella
+local function flashChamber(button: GuiObject, color: Color3, strength: number)
+	local ring = Instance.new("Frame")
+	ring.Name = "BuyRing"
+	ring.AnchorPoint = Vector2.new(0.5, 0.5)
+	ring.Position = UDim2.fromScale(0.5, 0.5)
+	ring.Size = UDim2.fromScale(1, 1)
+	ring.BackgroundTransparency = 1
+	ring.ZIndex = 9
+	ring.Parent = button
+	Comic.round(ring)
+	local stroke = Comic.ink(ring, 7, true)
+	stroke.Color = color
+	stroke.LineJoinMode = Enum.LineJoinMode.Round
+	local grow = TweenInfo.new(0.45 + 0.15 * strength, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+	TweenService:Create(ring, grow, { Size = UDim2.fromScale(1.6 + 0.5 * strength, 1.6 + 0.5 * strength) }):Play()
+	TweenService:Create(stroke, grow, { Transparency = 1, Thickness = 1 }):Play()
+
+	local glow = Instance.new("Frame")
+	glow.Name = "BuyGlow"
+	glow.AnchorPoint = Vector2.new(0.5, 0.5)
+	glow.Position = UDim2.fromScale(0.5, 0.5)
+	glow.Size = UDim2.fromScale(1, 1)
+	glow.BackgroundColor3 = Comic.Paper
+	glow.BackgroundTransparency = 0.15
+	glow.BorderSizePixel = 0
+	glow.ZIndex = 8
+	glow.Parent = button
+	Comic.round(glow)
+	TweenService:Create(glow, TweenInfo.new(0.3), { BackgroundTransparency = 1, Size = UDim2.fromScale(1.25, 1.25) }):Play()
+	task.delay(0.8, function()
+		ring:Destroy()
+		glow:Destroy()
+	end)
+end
+
+-- Cartelito que sale de la cámara y sube: "3 → 4" (o "¡HITO! ×2" en grande)
+local function riseLabel(button: GuiObject, text: string, size: number, color: Color3, big: boolean)
+	local label = Comic.label(canvas, text, Comic.Display, size, color)
+	label.RichText = true
+	label.AnchorPoint = Vector2.new(0.5, 1)
+	label.Position = button.Position - UDim2.fromOffset(0, button.Size.Y.Offset / 2 + 6)
+	label.Size = UDim2.fromOffset(0, size + 8)
+	label.AutomaticSize = Enum.AutomaticSize.X
+	label.ZIndex = 12
+	label.Rotation = if big then -6 else 3
+	local stroke = Comic.ink(label, if big then 5 else 3)
+	if big then
+		-- Estallido de cómic redondo detrás del texto (no depende de ninguna imagen)
+		label.BackgroundTransparency = 0
+		label.BackgroundColor3 = Comic.Red
+		Comic.round(label, 18)
+		local border = Comic.ink(label, 5, true)
+		local pad = Instance.new("UIPadding")
+		pad.PaddingLeft = UDim.new(0, 16)
+		pad.PaddingRight = UDim.new(0, 16)
+		pad.Parent = label
+		task.delay(1.2, function()
+			TweenService:Create(label, TweenInfo.new(0.25), { BackgroundTransparency = 1 }):Play()
+			TweenService:Create(border, TweenInfo.new(0.25), { Transparency = 1 }):Play()
+		end)
+	end
+	local scale = Instance.new("UIScale")
+	scale.Scale = 0.3
+	scale.Parent = label
+	TweenService:Create(scale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	local hold = if big then 1.2 else 0.7
+	TweenService:Create(label, TweenInfo.new(hold + 0.3, Enum.EasingStyle.Quad), { Position = label.Position - UDim2.fromOffset(0, if big then 60 else 40) }):Play()
+	task.delay(hold, function()
+		TweenService:Create(label, TweenInfo.new(0.25), { TextTransparency = 1 }):Play()
+		TweenService:Create(stroke, TweenInfo.new(0.25), { Transparency = 1 }):Play()
+	end)
+	task.delay(hold + 0.35, function()
+		label:Destroy()
+	end)
+end
+
+-- Celebración de una compra, proporcional: destello en la ficha, nivel viejo → nuevo y, si cruza
+-- un hito, un momento grande con fanfarria. Devuelve si fue hito (también lo lee Juice).
+local function celebrateLevel(kind: string, id: string, view)
+	local old, new = Tree.levelChange(kind, id)
+	if not old then
+		task.wait(0.15)
+		old, new = Tree.levelChange(kind, id)
+	end
+	local gained = if old then new - old else 1
+	local strength = math.clamp(0.3 + 0.1 * gained + new / 40, 0.3, 1)
+	local milestone = kind == "node" and old ~= nil and Tree.milestones(new) > Tree.milestones(old)
+	if view and view.button then
+		flashChamber(view.button, if milestone then Comic.Red else Comic.Yellow, if milestone then 1.4 else strength)
+		Comic.punch(view.scale, 1.3 + 0.25 * strength + (if milestone then 0.3 else 0))
+		if old then
+			riseLabel(view.button, old .. ' → <font color="#FFD23F">' .. new .. "</font>", 28, Comic.Paper, false)
+		end
+		if milestone then
+			task.delay(0.12, riseLabel, view.button, milestoneText(), 46, Comic.Yellow, true)
+		end
+	end
+	if milestone then
+		Sfx.fanfare()
+		task.delay(0.35, Sfx.pop, 1.9, 0.5)
+	else
+		-- Más agudo cuanto más alto el nivel: subir se oye
+		Sfx.pop(1 + math.min(new, 30) * 0.02)
+		if gained > 1 then
+			for i = 1, math.min(gained - 1, 4) do
+				task.delay(i * 0.05, Sfx.pop, 1.1 + i * 0.1, 0.3)
+			end
+		end
+	end
+end
+
 -- Rebote de la cámara recién comprada
 function Tree.celebrate(kind: string, id: any)
 	if kind == "dig" then
 		Sfx.fanfare()
 		scrollTo(bandTop(State.depth()) - 120)
-		return
-	elseif kind == "minis" then
-		-- Compra de golpe: con muchas, fanfarria
-		if (tonumber(id) or 0) >= 5 then
-			Sfx.fanfare()
-		else
-			Sfx.pop(1.2)
-		end
-		if cheapScale then
-			Comic.punch(cheapScale, 1.2)
-		end
 		return
 	elseif kind == "mini" then
 		local view = miniViews[id]
@@ -945,15 +1116,26 @@ function Tree.celebrate(kind: string, id: any)
 				view.scale.Parent = view.button
 			end
 			Comic.punch(view.scale, 1.5)
+			flashChamber(view.button, Comic.Yellow, 0.6)
 		end
 		Sfx.pop(1.25)
 		return
 	end
-	local view = if kind == "royal" then royalViews[id] elseif kind == "workers" then nodeViews.workers else nodeViews[id]
-	if view then
-		Comic.punch(view.scale, 1.35)
+	if kind == "node-max" then
+		kind = "node"
 	end
-	Sfx.pop(1.1)
+	local view = if kind == "royal" then royalViews[id] elseif kind == "workers" then nodeViews.workers else nodeViews[id]
+	if kind == "workers" then
+		if view then
+			Comic.punch(view.scale, 1.35)
+			flashChamber(view.button, Comic.Yellow, 0.5)
+		end
+		Sfx.pop(1.1)
+		return
+	end
+	if type(id) == "string" then
+		task.spawn(celebrateLevel, kind, id, view)
+	end
 end
 
 function Tree.isOpen(): boolean
@@ -985,6 +1167,7 @@ end
 function Tree.start(remoteFolder: Folder)
 	remotes = remoteFolder
 	build()
+	watchLevels()
 	UserInputService.InputBegan:Connect(function(input, processed)
 		if not processed and (input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.ButtonY) then
 			Tree.toggle()

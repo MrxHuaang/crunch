@@ -172,9 +172,15 @@ function Sfx.start()
 	task.delay(4, musicLoop)
 end
 
-local function play(sound: Sound, pitch: number)
+local function play(sound: Sound, pitch: number, volume: number?)
+	if not sound then
+		return
+	end
 	local copy = sound:Clone()
 	copy.PlaybackSpeed = pitch
+	if volume then
+		copy.Volume = volume
+	end
 	copy.Parent = SoundService
 	copy:Play()
 	copy.Ended:Once(function()
@@ -185,12 +191,41 @@ local function play(sound: Sound, pitch: number)
 	end)
 end
 
-function Sfx.bite(big: boolean)
-	play(bites[rng:NextInteger(1, #bites)], if big then rng:NextNumber(0.7, 0.8) else rng:NextNumber(1.15, 1.5))
+-- `boost` (opcional) multiplica el tono: la racha lo va subiendo
+function Sfx.bite(big: boolean, boost: number?, volume: number?)
+	if #bites == 0 then
+		return
+	end
+	local pitch = if big then rng:NextNumber(0.7, 0.8) else rng:NextNumber(1.15, 1.5)
+	play(bites[rng:NextInteger(1, #bites)], pitch * (boost or 1), volume)
 end
 
-function Sfx.pop(pitch: number?)
-	play(pop, pitch or rng:NextNumber(0.95, 1.1))
+function Sfx.pop(pitch: number?, volume: number?)
+	play(pop, pitch or rng:NextNumber(0.95, 1.1), volume)
+end
+
+-- Golpecito flojo (contador que rueda, medidor que se llena)
+function Sfx.tick(pitch: number?)
+	play(pop, pitch or 1.6, 0.14)
+end
+
+-- Zumbido eléctrico de un salto del rayo: tres chasquidos muy seguidos que suben con cada salto
+function Sfx.zap(step: number)
+	local base = 1.3 + 0.16 * step
+	for i = 0, 2 do
+		task.delay(i * 0.025, play, pop, base + i * 0.22, 0.32 - i * 0.07)
+	end
+	if #bites > 0 then
+		play(bites[rng:NextInteger(1, #bites)], 1.9 + 0.1 * step, 0.18)
+	end
+end
+
+-- Mini fanfarria de remate: más notas cuanto más grande era la comida (1..3)
+function Sfx.finish(size: number)
+	local notes = math.clamp(math.floor(size + 0.5), 1, 3)
+	for i = 0, notes do
+		task.delay(i * 0.06, play, pop, 0.95 + i * 0.2, 0.42)
+	end
 end
 
 -- El tono sube con cada depósito seguido
