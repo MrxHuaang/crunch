@@ -27,23 +27,28 @@ local REROLL_SECONDS = 600
 local SEND_GAP = 0.5 -- como mucho dos avisos de progreso por segundo
 local ACTION_GAP = 0.3 -- entre peticiones del cliente
 local DAY = 86400
-local BUFF_SECONDS = 180
-local BUFF_CHANCE = 0.25
+local BUFF_SECONDS = 60
+local BUFF_CHANCE = 0.2
 local GOLDEN_WINDOW = 1800 -- solo hay misión de bocados dorados si has cogido alguno en esta media hora
 
--- Por dificultad: segundos de juego que debería costar y segundos de colonia que paga
+-- Por dificultad: segundos de juego que debería costar y segundos de ingreso que paga.
+-- Una misión es un extra de alrededor de un tercio sobre lo que ganas mientras la haces:
+-- si paga tanto como jugar, se vuelve la forma principal de ganar comida.
 local EFFORT = { 120, 210, 300 }
-local PAY = { 120, 270, 420 }
+local PAY = { 35, 70, 110 }
+-- Lo que rinde un segundo de juego a mano, medido en mordiscos: entre caminar y cargar,
+-- una hormiga saca más o menos un mordisco de valor cada cinco segundos.
+local BITES_PER_SECOND = 0.2
 
 -- Premio diario: minutos de colonia, minutos de comida x2 y jalea
 local DAILY = {
+	{ minutes = 3 },
 	{ minutes = 5 },
+	{ minutes = 8, buff = 3 },
 	{ minutes = 10 },
-	{ minutes = 15, buff = 5 },
-	{ minutes = 20 },
-	{ minutes = 25, buff = 10 },
-	{ minutes = 30 },
-	{ minutes = 60, jelly = 2 },
+	{ minutes = 12, buff = 5 },
+	{ minutes = 15 },
+	{ minutes = 30, jelly = 2 },
 }
 
 local KINDS = { "eat", "finish", "loads", "buy", "golden", "workers" }
@@ -385,7 +390,9 @@ local function rawFood(profile, seconds: number): number
 	local stats = profile.stats
 	local depth = math.clamp(stats.depth, 1, #Config.Zones)
 	local zoneFood = Config.Foods[(depth - 1) * 3 + 1]
-	return math.max(math.floor(profile.data.rate * seconds), math.floor(seconds / 3 * stats.biteDamage * zoneFood.value))
+	-- data.rate ya lleva el multiplicador de comida y addFood lo vuelve a aplicar: se quita aquí
+	local colony = profile.data.rate / math.max(stats.foodMult, 1) * seconds
+	return math.max(math.floor(colony), math.floor(seconds * BITES_PER_SECOND * stats.biteDamage * zoneFood.value))
 end
 
 -- Lo que verá el jugador (sin contar una poción o un hongo activos)
