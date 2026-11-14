@@ -1,0 +1,34 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Bangers&display=block" rel="stylesheet">
+<style>html,body{margin:0;width:512px;height:512px;overflow:hidden;background:#FFD23F}</style>
+</head><body>
+<svg id="s" width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"></svg>
+<script src="common.js"></script>
+<script>
+const s = document.getElementById("s");
+s.innerHTML = `<defs>${DEFS}
+  <radialGradient id="fade" cx=".5" cy=".45" r=".6"><stop offset=".45" stop-color="black"/><stop offset="1" stop-color="white"/></radialGradient>
+  <mask id="cornerDots"><rect width="512" height="512" fill="url(#fade)"/></mask>
+</defs>
+<rect width="512" height="512" fill="${C.yellow}"/>
+${rays(256, 230, 520, 18, "#FFE680", 1)}
+<rect width="512" height="512" fill="url(#dots)" opacity=".22" mask="url(#cornerDots)"/>
+<polygon points="${burst(256, 236, 236, 176, 16, 0.1)}" fill="white" stroke="${C.ink}" stroke-width="10" stroke-linejoin="round"/>
+
+<g transform="translate(256 262) scale(1.32)">
+  <use href="#ant"/>
+</g>
+<!-- galleta en las mandíbulas -->
+<g transform="translate(330 330) rotate(-14) scale(.62)"><use href="#cookie"/></g>
+<g transform="translate(410 250) rotate(20) scale(1.1)"><use href="#crumb"/></g>
+<g transform="translate(440 300) rotate(-30) scale(.8)"><use href="#crumb"/></g>
+<g transform="translate(400 200) rotate(60) scale(.7)"><use href="#crumb"/></g>
+<g stroke="${C.ink}" stroke-width="8" stroke-linecap="round">
+  <path d="M424,352 l34,10"/><path d="M418,384 l28,24"/><path d="M394,404 l12,32"/>
+</g>
+${titleText(256, 488, 92, "CRUNCH!", -5)}
+`;
+document.fonts.ready.then(() => document.body.setAttribute("data-ready", "1"));
+</script>
+</body></html>

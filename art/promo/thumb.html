@@ -1,0 +1,81 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@700&display=block" rel="stylesheet">
+<style>html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#3EC1F3}</style>
+</head><body>
+<svg id="s" width="1920" height="1080" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg"></svg>
+<script src="common.js"></script>
+<script>
+const s = document.getElementById("s");
+
+// hormigas obreras en fila por el túnel, cada una con su miga
+function worker(x, y, sc, rot, food) {
+  return `<g transform="translate(${x} ${y}) rotate(${rot}) scale(${sc})">
+    <g transform="translate(0 -180) scale(2.6)"><use href="#${food}"/></g>
+    <use href="#ant"/></g>`;
+}
+
+const GROUND = 800;
+s.innerHTML = `<defs>${DEFS}
+  <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#348EE0"/><stop offset=".7" stop-color="#7ECEF6"/><stop offset="1" stop-color="#FFF0CC"/></linearGradient>
+  <linearGradient id="dotFade" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="white"/><stop offset=".5" stop-color="black"/></linearGradient>
+  <mask id="dotMask"><rect width="1920" height="1080" fill="url(#dotFade)"/></mask>
+</defs>
+<rect width="1920" height="1080" fill="url(#sky)"/>
+<rect width="1920" height="1080" fill="url(#dots)" opacity=".18" mask="url(#dotMask)"/>
+${rays(1400, 470, 1400, 22, "white", .12)}
+
+<!-- estallido detrás de la hormiga -->
+<polygon points="${burst(1400, 470, 470, 350, 18, 0.05)}" fill="${C.yellow}" stroke="${C.ink}" stroke-width="12" stroke-linejoin="round"/>
+<polygon points="${burst(1400, 470, 340, 270, 14, 0.25)}" fill="white" opacity=".55"/>
+
+<!-- suelo: hierba y capas del hormiguero -->
+<path d="M0,${GROUND} C200,${GROUND - 30} 380,${GROUND + 20} 640,${GROUND - 6} C900,${GROUND - 30} 1100,${GROUND + 18} 1400,${GROUND - 8} C1620,${GROUND - 26} 1800,${GROUND + 10} 1920,${GROUND - 4} V1080 H0Z" fill="${C.dirt}" stroke="${C.ink}" stroke-width="12"/>
+<path d="M0,${GROUND + 110} C300,${GROUND + 90} 600,${GROUND + 140} 960,${GROUND + 112} C1300,${GROUND + 86} 1600,${GROUND + 136} 1920,${GROUND + 110} V1080 H0Z" fill="${C.dirtDark}" stroke="${C.ink}" stroke-width="8"/>
+<path d="M0,${GROUND + 210} C400,${GROUND + 190} 800,${GROUND + 236} 1200,${GROUND + 206} C1500,${GROUND + 186} 1700,${GROUND + 226} 1920,${GROUND + 206} V1080 H0Z" fill="#5A3822" stroke="${C.ink}" stroke-width="8"/>
+<rect y="${GROUND}" width="1920" height="300" fill="url(#dotsSmall)" opacity=".12"/>
+<!-- hierba -->
+<path d="M0,${GROUND + 6} ${Array.from({length: 64}, (_, i) => { const x = i * 30; return `L${x + 8},${GROUND - 28 - (i % 3) * 10} L${x + 16},${GROUND + 4} L${x + 24},${GROUND - 18 - (i % 2) * 12} L${x + 30},${GROUND + 6}`; }).join(" ")} L1920,${GROUND + 30} L0,${GROUND + 30}Z" fill="${C.green}" stroke="${C.ink}" stroke-width="7" stroke-linejoin="round"/>
+
+<!-- túnel con cámaras -->
+<path d="M180,${GROUND + 70} C420,${GROUND + 60} 520,${GROUND + 170} 760,${GROUND + 160} C980,${GROUND + 150} 1060,${GROUND + 240} 1300,${GROUND + 236}" fill="none" stroke="${C.ink}" stroke-width="64" stroke-linecap="round"/>
+<path d="M180,${GROUND + 70} C420,${GROUND + 60} 520,${GROUND + 170} 760,${GROUND + 160} C980,${GROUND + 150} 1060,${GROUND + 240} 1300,${GROUND + 236}" fill="none" stroke="${C.dirtLight}" stroke-width="48" stroke-linecap="round"/>
+<ellipse cx="760" cy="${GROUND + 160}" rx="90" ry="50" fill="${C.dirtLight}" stroke="${C.ink}" stroke-width="8"/>
+<ellipse cx="1300" cy="${GROUND + 236}" rx="80" ry="40" fill="${C.dirtLight}" stroke="${C.ink}" stroke-width="8"/>
+<g transform="translate(760 ${GROUND + 176}) scale(.42)"><use href="#cookie"/></g>
+<g transform="translate(1300 ${GROUND + 246}) scale(.28)"><use href="#donut"/></g>
+${worker(330, GROUND + 92, .2, 6, "crumb")}
+${worker(470, GROUND + 112, .2, 18, "crumb")}
+${worker(980, GROUND + 186, .2, 12, "crumb")}
+${worker(1120, GROUND + 222, .2, 8, "crumb")}
+
+<!-- comida flotando -->
+<g transform="translate(980 210) rotate(-18) scale(.9)"><use href="#donut"/></g>
+<g transform="translate(1830 230) rotate(16) scale(.72)"><use href="#strawberry"/></g>
+<g transform="translate(1840 660) rotate(-10) scale(.6)"><use href="#donut"/></g>
+
+<!-- hormiga protagonista con galleta gigante -->
+<g transform="translate(1400 520) scale(2.1)"><use href="#ant"/></g>
+<g transform="translate(1610 640) rotate(-12) scale(1.35)"><use href="#cookie"/></g>
+<g transform="translate(1790 470) rotate(20) scale(2)"><use href="#crumb"/></g>
+<g transform="translate(1840 560) rotate(-30) scale(1.4)"><use href="#crumb"/></g>
+<g transform="translate(1740 380) rotate(60) scale(1.2)"><use href="#crumb"/></g>
+<g stroke="${C.ink}" stroke-width="12" stroke-linecap="round">
+  <path d="M1790,640 l60,4"/><path d="M1786,700 l52,30"/>
+</g>
+
+<!-- título -->
+<polygon points="${burst(480, 330, 380, 300, 20, 0)}" fill="${C.red}" stroke="${C.ink}" stroke-width="12" stroke-linejoin="round"/>
+<polygon points="${burst(480, 330, 330, 290, 20, 0.16)}" fill="url(#dots)" opacity=".18"/>
+${titleText(480, 400, 220, "CRUNCH!", -7)}
+
+<!-- caja de texto de cómic -->
+<g transform="translate(130 610) rotate(-2)">
+  <rect x="12" y="12" width="700" height="104" fill="${C.ink}"/>
+  <rect width="700" height="104" fill="${C.paper}" stroke="${C.ink}" stroke-width="8"/>
+  <text x="350" y="70" text-anchor="middle" style="font-family:Bangers,Impact,sans-serif;font-size:58px;letter-spacing:2px" fill="${C.ink}">¡DE UNA MIGA... AL ESPACIO!</text>
+</g>
+`;
+document.fonts.ready.then(() => document.body.setAttribute("data-ready", "1"));
+</script>
+</body></html>
