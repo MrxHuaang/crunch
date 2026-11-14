@@ -30,8 +30,9 @@ Leaderboard.start()
 require(script.Monetize).start()
 PlayerService.start(remotes)
 
--- Módulos opcionales (misiones, eventos, mascotas, peligros, aliadas): se arrancan si existen.
-for _, name in { "Quests", "WorldEvents", "PetService", "Hazards", "Allies" } do
+-- Módulos opcionales (misiones, eventos, mascotas, peligros, aliadas, comida dorada, mordida en
+-- cadena, túnel): se arrancan si existen.
+for _, name in { "Quests", "WorldEvents", "PetService", "Hazards", "Allies", "GoldFood", "Chain", "Tunnel", "Extras", "Perks", "Garden", "Opening", "CasteService", "Social", "Orders", "Emotes", "Stalls" } do
 	local module = script:FindFirstChild(name)
 	if module then
 		local ok, lib = pcall(require, module)

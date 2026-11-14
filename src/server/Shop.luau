@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Stats = require(ReplicatedStorage.Shared.Stats)
 local Outfits = require(ReplicatedStorage.Shared.Outfits)
+local Trails = require(ReplicatedStorage.Shared.Trails)
 local Colony = require(script.Parent.Colony)
 local Events = require(script.Parent.Events)
 local Profiles = require(script.Parent.Profiles)
@@ -52,41 +53,32 @@ local function buyMini(profile, id: string): boolean
 	end
 	data.food -= def.cost
 	data.minis[id] = true
-	return true
-end
-
--- "Comprar lo barato": galerías abiertas de la más barata a la más cara, sin gastar más de una
--- parte de la comida que tenías al pulsar. Devuelve los ids de las que compró.
-local function buyCheapMinis(profile): { string }
-	local data = profile.data
-	local budget = data.food * Config.MiniTune.BuyAllShare
-	local bought = {}
-	for _, def in Config.MinisByCost do
-		if data.minis[def.id] or def.layer > data.depth then
-			continue
-		end
-		if def.cost > budget then
-			break -- las que quedan son todavía más caras
-		end
-		if Stats.miniOpen(def, data.minis, data.depth) and data.food >= def.cost then
-			data.food -= def.cost
-			data.minis[def.id] = true
-			budget -= def.cost
-			table.insert(bought, def.id)
-		end
+	-- "Cuna nueva": obreras gratis al momento. Caben siempre: la misma galería sube el cupo el doble
+	-- (Profiles.refresh recorta a la guardería, así que sin guardería no llegan)
+	if def.kind == "crew" then
+		data.workers += def.amount
 	end
-	return bought
+	return true
 end
 
 -- Excavar una capa más: abre la zona siguiente y sube el tope de las mejoras.
 local function dig(profile): boolean
 	local data = profile.data
 	local cost = Stats.digCost(data.depth)
+	-- Pala dorada (Monetize, data.paid.halfDig): esta capa cuesta la mitad
+	local paid = data.paid
+	local half = type(paid) == "table" and type(paid.halfDig) == "number" and paid.halfDig > 0
+	if half then
+		cost *= 0.5
+	end
 	if data.depth >= Stats.MaxDepth or data.food < cost then
 		return false
 	end
 	data.food -= cost
 	data.depth += 1
+	if half then
+		paid.halfDig -= 1
+	end
 	return true
 end
 
@@ -147,13 +139,6 @@ local function onBuy(player: Player, kind: any, id: any, amount: any)
 		if ok then
 			table.insert(bought, { "mini", id })
 		end
-	elseif kind == "minis" then
-		local ids = buyCheapMinis(profile)
-		for _, miniId in ids do
-			table.insert(bought, { "mini", miniId })
-		end
-		ok = #ids > 0
-		id = #ids
 	elseif kind == "dig" then
 		ok = dig(profile)
 		id = profile.data.depth
@@ -188,7 +173,7 @@ local function onWear(player: Player, kind: any, id: any)
 	if not profile or type(id) ~= "string" then
 		return
 	end
-	local def = if kind == "skin" then Config.SkinById[id] elseif kind == "hat" then Config.HatById[id] elseif kind == "trail" then Config.TrailById[id] elseif kind == "outfit" then Outfits.byId[id] else nil
+	local def = if kind == "skin" then Config.SkinById[id] elseif kind == "hat" then Config.HatById[id] elseif kind == "trail" then Trails.byId[id] elseif kind == "outfit" then Outfits.byId[id] else nil
 	if not def then
 		return
 	end
@@ -251,7 +236,7 @@ local function onRebirth(player: Player)
 	data.depth = 1 + math.min(data.royal.royalDepth or 0, Stats.MaxDepth - 1)
 
 	-- Nido heredado: empiezas con obreras y con la guardería justa para que quepan
-	local inherited = 5 * (data.royal.royalStart or 0)
+	local inherited = Config.Rebirth.StartWorkers * (data.royal.royalStart or 0)
 	if inherited > 0 then
 		data.nodes.nursery = Stats.nurseryFor(inherited)
 		data.workers = inherited

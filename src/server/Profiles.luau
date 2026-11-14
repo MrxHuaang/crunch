@@ -6,6 +6,7 @@ local Workspace = game:GetService("Workspace")
 local AntLook = require(ReplicatedStorage.Shared.AntLook)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Stats = require(ReplicatedStorage.Shared.Stats)
+local Trails = require(ReplicatedStorage.Shared.Trails)
 local World = require(script.Parent.World)
 
 local Profiles = {}
@@ -72,6 +73,8 @@ function Profiles.push(profile)
 	player:SetAttribute("FrenzyUntil", profile.frenzyUntil)
 	player:SetAttribute("FrenzyReadyAt", profile.frenzyReadyAt)
 	player:SetAttribute("BuffUntil", profile.buffUntil)
+	-- Comida por segundo de la colonia (la ficha de la tienda la usa para hablar con tus números)
+	player:SetAttribute("Rate", math.floor((data.rate or 0) * 10) / 10)
 
 	local hill = profile.hill
 	if hill then
@@ -111,44 +114,10 @@ function Profiles.applyLook(profile, force: boolean?)
 		warn("[CRUNCH!] No se pudo vestir a la hormiga:", err)
 	end
 
-	-- Estela: una cinta de color que sale del abdomen
-	local abdomen = character:FindFirstChild("Abdomen")
-	local old = character:FindFirstChild("Estela")
-	if old then
-		old:Destroy()
-	end
-	if abdomen then
-		for _, child in abdomen:GetChildren() do
-			if child.Name == "EstelaPunto" then
-				child:Destroy()
-			end
-		end
-	end
-	local def = Config.TrailById[data.trail]
-	if abdomen and def and def.colors then
-		local scale = character:GetScale()
-		local points = {}
-		for i, y in { 0.7, -0.7 } do
-			local point = Instance.new("Attachment")
-			point.Name = "EstelaPunto"
-			point.Position = Vector3.new(0, y * scale, 0.6 * scale)
-			point.Parent = abdomen
-			points[i] = point
-		end
-		local keys = {}
-		for i, color in def.colors do
-			table.insert(keys, ColorSequenceKeypoint.new((i - 1) / math.max(#def.colors - 1, 1), color))
-		end
-		local trail = Instance.new("Trail")
-		trail.Name = "Estela"
-		trail.Attachment0 = points[1]
-		trail.Attachment1 = points[2]
-		trail.Color = ColorSequence.new(keys)
-		trail.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.15), NumberSequenceKeypoint.new(1, 1) })
-		trail.Lifetime = 0.7
-		trail.LightEmission = 0.3
-		trail.FaceCamera = true
-		trail.Parent = character
+	-- Estela: cintas, partículas y luz que salen del abdomen (Shared/Trails)
+	local trailOk, trailErr = pcall(Trails.apply, character, data.trail, character:GetScale())
+	if not trailOk then
+		warn("[CRUNCH!] No se pudo poner la estela:", trailErr)
 	end
 end
 

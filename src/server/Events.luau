@@ -9,7 +9,11 @@
 --   "Dig"      (profile, depth)                   capa nueva
 --   "Rebirth"  (profile, jelly)                   enjambre
 --   "Golden"   (profile)                          bocado dorado
---   "Bite"     (profile, food, chained)           mordisco tuyo acertado (chained: seguido del anterior)
+--   "Bite"     (profile, food, chained, position, damage, finished)
+--                                                mordisco tuyo acertado (chained: seguido del anterior;
+--                                                position: centro de la comida + 1; damage: daño del
+--                                                mordisco; finished: lo terminó, y food ya no existe)
+--   "FinalBite" (profile, food, position, damage) tu mordisco terminó esa comida (food ya no existe)
 
 local Events = {}
 

@@ -213,7 +213,9 @@ end
 local function eggValue(profile): number
 	local stats = profile.stats
 	local zoneFood = Config.Foods[(stats.depth - 1) * 3 + 1]
-	return math.max(profile.data.rate * stats.eggSeconds, 20 * stats.biteDamage * zoneFood.value) * stats.eggMult
+	-- data.rate ya lleva el multiplicador de comida y addFood lo vuelve a aplicar: se quita aquí
+	local colony = profile.data.rate / math.max(stats.foodMult, 1e-3) * stats.eggSeconds
+	return math.max(colony, Config.Egg.FloorBites * stats.biteDamage * zoneFood.value) * stats.eggMult
 end
 
 local function updateEgg(nest, profile, now: number, root: BasePart?)

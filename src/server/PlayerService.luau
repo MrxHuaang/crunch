@@ -64,6 +64,7 @@ local function updateCarryVisual(profile)
 
 	local chunk = character:FindFirstChild("CarryChunk") :: Part?
 	if profile.carry <= 0 then
+		profile.carryGold = nil -- la carga dorada se fue con la entrega
 		if chunk then
 			chunk:Destroy()
 		end
@@ -91,7 +92,9 @@ local function updateCarryVisual(profile)
 	local own = profile.stats.ownCapacity or profile.stats.capacity
 	local side = (0.7 + 1.3 * math.clamp(profile.carry / own, 0, 1)) * scale
 	local chunkPart = chunk :: Part
-	chunkPart.Color = profile.carryColor
+	-- Si llevas algo de comida dorada, el trozo es de oro y brilla
+	chunkPart.Color = if profile.carryGold then Color3.fromRGB(255, 196, 40) else profile.carryColor
+	chunkPart.Material = if profile.carryGold then Enum.Material.Neon else Enum.Material.SmoothPlastic
 	chunkPart.Size = Vector3.new(side, side, side)
 	local weld = chunkPart:FindFirstChild("CarryWeld") :: Weld
 	-- Entre las mandíbulas (el frente de la hormiga es -Z)
@@ -246,14 +249,19 @@ local function onBite(player: Player, food: any)
 	damage = math.ceil(damage)
 	local position = food:GetPivot().Position + Vector3.new(0, 1, 0)
 	local color = food:GetAttribute("Color")
+	local goldFood = FoodService.isGolden(food)
+	local piece = FoodService.pieceValue(food, def, stats)
 
 	local taken, _, finished = FoodService.damage(food, math.min(damage, space))
 	if taken <= 0 then
 		return
 	end
 	profile.carry += taken
-	profile.carryValue += taken * def.value * stats.zoneMult[def.zone] * worth
+	profile.carryValue += taken * piece * worth
 	profile.carryColor = color
+	if goldFood then
+		profile.carryGold = true
+	end
 	Profiles.trackFood(profile, def, taken)
 	Events.fire("Ate", profile, def, taken, false)
 	if finished then
@@ -264,28 +272,39 @@ local function onBite(player: Player, food: any)
 		Events.fire("Golden", profile)
 	end
 
-	-- Mordida en área: la mitad del daño a lo que haya cerca
+	-- Mordida en área: Config.Player.AreaShare del mordisco a las comidas de al lado (como mucho las
+	-- tres más cercanas: en un racimo siempre hay vecinas, y Stats.harvest cuenta con tres)
 	if stats.areaRadius > 0 then
 		local nearby = {}
 		for other in FoodService.list() do
-			if other ~= food and edgeDistance(position, other) <= stats.areaRadius then
-				table.insert(nearby, other)
+			local gap = if other ~= food then edgeDistance(position, other) else math.huge
+			if gap <= stats.areaRadius then
+				table.insert(nearby, { food = other, gap = gap })
 			end
 		end
-		for _, other in nearby do
-			if profile.carry >= stats.capacity then
+		table.sort(nearby, function(a, b)
+			return a.gap < b.gap
+		end)
+		for i, item in nearby do
+			if i > 3 or profile.carry >= stats.capacity then
 				break
 			end
-			PlayerService.take(profile, other, math.ceil(damage * 0.5), worth)
+			PlayerService.take(profile, item.food, math.ceil(damage * (stats.areaShare or 0.5)), worth)
 		end
 	end
 
-	-- Para las aliadas (escolta, mega crunch): qué mordiste y si fue seguido
-	Events.fire("Bite", profile, food, gap <= Config.Combo.Window)
+	-- Para las aliadas (escolta, mega crunch) y las castas: qué mordiste, si fue seguido, dónde,
+	-- con cuánto daño y si la terminaste
+	Events.fire("Bite", profile, food, gap <= Config.Combo.Window, position, damage, finished)
 
 	Profiles.push(profile)
 	updateCarryVisual(profile)
-	fxRemote:FireClient(player, "Bite", position, taken, finished, crit, profile.combo, golden)
+	fxRemote:FireClient(player, "Bite", position, taken, finished, crit, profile.combo, golden, goldFood)
+
+	-- Mordida en cadena (módulo Chain): después del efecto del mordisco, para que el rayo salga de ahí
+	if finished then
+		Events.fire("FinalBite", profile, food, position, damage)
+	end
 end
 
 -- Arranca hasta `amount` de vida de una comida y lo mete en tu carga, si cabe. Comprueba la puerta
@@ -301,12 +320,17 @@ function PlayerService.take(profile, food: Model, amount: number, worth: number?
 		return 0, false
 	end
 	local color = food:GetAttribute("Color")
+	local goldFood = FoodService.isGolden(food)
+	local piece = FoodService.pieceValue(food, def, stats)
 	local taken, _, finished = FoodService.damage(food, math.min(math.ceil(amount), space))
 	if taken > 0 then
 		profile.carry += taken
-		profile.carryValue += taken * def.value * stats.zoneMult[def.zone] * (worth or 1)
+		profile.carryValue += taken * piece * (worth or 1)
 		if typeof(color) == "Color3" then
 			profile.carryColor = color
+		end
+		if goldFood then
+			profile.carryGold = true
 		end
 		Profiles.trackFood(profile, def, taken)
 		Events.fire("Ate", profile, def, taken, false)
@@ -340,6 +364,19 @@ function PlayerService.credit(profile, carry: number, carryValue: number): (numb
 	local credited = Profiles.addFood(profile, value)
 	Events.fire("Deposit", profile, credited, full)
 	return credited, full, doubled
+end
+
+-- Entrega a distancia (Catapulta de la Porteadora): la misma cuenta y el mismo efecto que llegar a
+-- pie con esa carga. Quien llama ya ha vaciado la carga. Devuelve lo acreditado.
+function PlayerService.deliver(profile, carry: number, carryValue: number): number
+	if not profile.hill or carry <= 0 then
+		return 0
+	end
+	local center = profile.hill:GetPivot().Position
+	local credited, _, doubled = PlayerService.credit(profile, carry, carryValue)
+	Profiles.push(profile)
+	fxRemote:FireClient(profile.player, "Deposit", center + Vector3.new(0, 9 * profile.stats.hillScale, 0), credited, doubled)
+	return credited
 end
 
 local function depositLoop()

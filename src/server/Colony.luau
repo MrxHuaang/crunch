@@ -15,6 +15,23 @@ local Profiles = require(script.Parent.Profiles)
 
 local Colony = {}
 
+-- (profile, def, posición de la comida, distancia desde casa) -> distancia que pagan las obreras.
+-- Lo pone el módulo Extras (puesto avanzado); sin él, la distancia es la de siempre.
+Colony.shortcut = nil :: ((any, any, Vector3, number) -> number)?
+-- Ganchos del módulo Garden: (profile, comida) -> si las obreras sin rastro pueden ir a esa comida
+-- del jardín; (profile, vida que querrían arrancar al jardín en este tick, dt) -> la que les toca.
+Colony.autoAllowed = nil :: ((any, Model) -> boolean)?
+Colony.gardenLimit = nil :: ((any, number, number) -> number)?
+-- Ganchos de las castas (Comandante). forced: (profile) -> comida a la que van a la fuerza ahora y
+-- cuántas obreras como mucho (nil: ninguna). boost: (profile, comida) -> (multiplicador de trabajo,
+-- multiplicador de valor). Sin ellos, todo es como siempre.
+Colony.forced = nil :: ((any) -> (Model?, number?))?
+Colony.boost = nil :: ((any, Model) -> (number, number))?
+-- Gancho del módulo Orders (órdenes y escuadrones): (profile, centro del hormiguero, rastros marcados
+-- [1..n]) -> (destinos [hueco 1..3], obreras [hueco], cuántos de los primeros huecos son rastros
+-- marcados) o nil para el reparto de siempre (sin orden elegida devuelve nil).
+Colony.orders = nil :: ((any, Vector3, { Model }) -> ({ [number]: Model }?, { [number]: number }?, number?))?
+
 local TICK = 0.5
 local BITE_TIME = 3 -- segundos que, como poco, tarda una colonia en terminar una comida
 local AUTO_TARGETS = 3 -- comidas del jardín a la vez cuando no hay rastros
@@ -23,6 +40,35 @@ local fxRemote: RemoteEvent
 local function canEat(profile, def): boolean
 	local stats = profile.stats
 	return def.zone <= stats.depth and (not def.hard or stats.workersBreakHard)
+end
+
+-- Hasta `count` comidas del mismo racimo que `food` (a Config.Chain.Range studs de borde a borde), de
+-- la más cercana a la más lejana, que esta colonia pueda comer
+function Colony.clusterMates(profile, food: Model, count: number): { Model }
+	if count <= 0 then
+		return {}
+	end
+	local center = food:GetPivot().Position
+	local near = {}
+	for other in FoodService.list() do
+		if other ~= food then
+			local def = FoodService.defOf(other)
+			if def and canEat(profile, def) then
+				local gap = ((other:GetPivot().Position - center) * Vector3.new(1, 0, 1)).Magnitude - ((other:GetAttribute("Radius") :: number?) or 0)
+				if gap <= Config.Chain.Range then
+					table.insert(near, { food = other, gap = gap })
+				end
+			end
+		end
+	end
+	table.sort(near, function(a, b)
+		return a.gap < b.gap
+	end)
+	local out = {}
+	for i = 1, math.min(count, #near) do
+		out[i] = near[i].food
+	end
+	return out
 end
 
 local function makeTrail(profile, food: Model)
@@ -74,7 +120,7 @@ local function fillSmart(profile, slots: number, hillPos: Vector3)
 				continue
 			end
 			local food = FoodService.nearest(hillPos, math.huge, function(candidate, def)
-				return def.id == wanted.id and not isTargeted(profile, candidate)
+				return def.id == wanted.id and not isTargeted(profile, candidate) and candidate:GetAttribute("Event") == nil
 			end)
 			if food then
 				profile.trails[slot] = makeTrail(profile, food)
@@ -90,6 +136,7 @@ end
 -- Devuelve los huecos 1..3 (puede haber huecos vacíos si en el jardín no queda nada).
 local function autoFoods(profile, hillPos: Vector3): { [number]: Model }
 	local chosen = profile.autoFoods
+	local allowed = Colony.autoAllowed -- Garden: lejos de hormigueros ajenos y de lo que alguien muerde
 	local function taken(food: Model): boolean
 		for slot = 1, AUTO_TARGETS do
 			if chosen[slot] == food then
@@ -100,14 +147,15 @@ local function autoFoods(profile, hillPos: Vector3): { [number]: Model }
 	end
 	for slot = 1, AUTO_TARGETS do
 		local current = chosen[slot]
-		if current and FoodService.isFood(current) then
+		if current and FoodService.isFood(current) and (not allowed or allowed(profile, current)) then
 			continue
 		end
+		chosen[slot] = nil -- deja de contar como cogida mientras se busca otra
 		local best: Model? = nil
 		local bestScore = -math.huge
 		for food in FoodService.list() do
 			local def = FoodService.defOf(food)
-			if def.zone == 1 and not def.hard and not taken(food) then
+			if def.zone == 1 and not def.hard and not taken(food) and (not allowed or allowed(profile, food)) then
 				local distance = (food:GetPivot().Position - hillPos).Magnitude
 				local score = (food:GetAttribute("Hp") :: number) * 1000 - distance
 				if score > bestScore then
@@ -121,8 +169,10 @@ local function autoFoods(profile, hillPos: Vector3): { [number]: Model }
 	return chosen
 end
 
--- targets: [hueco 1..3] = comida; un hueco vacío borra su destino
-local function publish(hill: Model, targets: { [number]: Model })
+-- targets: [hueco 1..3] = comida; un hueco vacío borra su destino.
+-- crews (escuadrones, módulo Orders): [hueco] = obreras; se publica la parte de cada hueco en
+-- TrailShare1..3 para que el cliente reparta las filas igual. Sin crews, filas iguales (TrailShare nil).
+local function publish(hill: Model, targets: { [number]: Model }, crews: { [number]: number }?, workers: number)
 	for i = 1, 3 do
 		local food = targets[i]
 		if food then
@@ -132,6 +182,8 @@ local function publish(hill: Model, targets: { [number]: Model })
 		else
 			hill:SetAttribute("TrailPos" .. i, nil)
 		end
+		local share = if crews and food and workers > 0 then math.floor((crews[i] or 0) / workers * 100 + 0.5) / 100 else nil
+		hill:SetAttribute("TrailShare" .. i, share)
 	end
 end
 
@@ -164,41 +216,143 @@ local function tick(profile, dt: number)
 
 	local marked = count > 0
 	hill:SetAttribute("Auto", not marked)
-	if not marked and data.workers > 0 then
+	-- Órdenes y escuadrones (módulo Orders): si hay orden elegida, destinos y obreras de cada hueco
+	-- salen de ahí; los rastros marcados son del primer escuadrón (markedSlots: los primeros huecos)
+	local crews: { [number]: number }? = nil
+	local markedSlots = count
+	if Colony.orders and data.workers > 0 then
+		local planned, plannedCrews, plannedMarked = Colony.orders(profile, hillPos, table.clone(targets))
+		if planned and plannedCrews then
+			targets, crews, markedSlots = planned, plannedCrews, plannedMarked or 0
+			count = 0
+			for _ in targets do
+				count += 1
+			end
+		end
+	end
+	hill:SetAttribute("Marked", markedSlots) -- las banderas de rastro solo van en estos huecos
+	if not marked and not crews and data.workers > 0 then
 		for slot, food in autoFoods(profile, hillPos) do
 			targets[slot] = food
 			count += 1
 		end
 	end
-	publish(hill, targets)
+	-- Castas (Comandante): la comida asaltada a la fuerza ocupa el primer hueco si no estaba ya
+	local forced, crew = nil, 0
+	if Colony.forced and data.workers > 0 then
+		local food, most = Colony.forced(profile)
+		if food and FoodService.isFood(food) and canEat(profile, FoodService.defOf(food)) then
+			forced, crew = food, most or data.workers
+			local present = false
+			for _, other in targets do
+				present = present or other == food
+			end
+			if not present then
+				if targets[1] == nil then
+					count += 1
+				end
+				targets[1] = food
+			end
+		end
+	end
+	-- Con escuadrones, la asaltada se lleva su cuadrilla (o la de su hueco, si es mayor) y los demás
+	-- huecos se quedan con lo que sobra, en la misma proporción
+	if crews and forced then
+		local forcedSlot = nil
+		for slot, food in targets do
+			if food == forced then
+				forcedSlot = slot
+			end
+		end
+		if forcedSlot then
+			local own = crews[forcedSlot] or 0
+			local want = math.max(own, math.min(crew, data.workers))
+			local rest = data.workers - own
+			local scale = if rest > 0 then math.max(data.workers - want, 0) / rest else 0
+			for slot in targets do
+				crews[slot] = if slot == forcedSlot then want else (crews[slot] or 0) * scale
+			end
+		end
+	end
+	publish(hill, targets, crews, data.workers)
 
 	local credited = 0
 	local remainders = {} -- solo se guardan las de los destinos de ahora
 	if data.workers > 0 and count > 0 then
 		local now = Workspace:GetServerTimeNow()
 		local mult = stats.colonyMult * (if now < profile.frenzyUntil then stats.frenzyMult else 1)
-		if marked then
+		if marked and not crews then
 			mult *= stats.trailBonus
 		end
 		local share = data.workers / count
+		local forcedShare = 0
+		if forced then
+			-- La asaltada se lleva su cuadrilla (o su parte normal, si es mayor); el resto se reparte
+			forcedShare = math.max(share, math.min(crew, data.workers))
+			share = if count > 1 then math.max(data.workers - forcedShare, 0) / (count - 1) else 0
+		end
 
-		for _, food in targets do
+		-- Primero lo que arrancaría cada destino; la parte del jardín se recorta luego a lo que
+		-- le toca a esta colonia (Colony.gardenLimit, módulo Garden)
+		local plan = {}
+		local garden = 0
+		for slot, food in targets do
 			local def = FoodService.defOf(food)
 			if not canEat(profile, def) then
 				continue
 			end
 			local flat = (food:GetPivot().Position - hillPos) * Vector3.new(1, 0, 1)
-			local trip = (2 * flat.Magnitude / stats.workerSpeed + Config.Worker.TurnTime) * stats.tripMult
+			local reach = flat.Magnitude
+			if Colony.shortcut then
+				reach = Colony.shortcut(profile, def, food:GetPivot().Position, reach) -- puesto avanzado (Extras)
+			end
+			local trip = (2 * reach / stats.workerSpeed + Config.Worker.TurnTime) * stats.tripMult
 			-- Tope por comida: lo que no cabe se pierde (esas obreras esperan), no se guarda para luego
 			local cap = (food:GetAttribute("MaxHp") or def.hp) * dt / BITE_TIME
-			local gain = math.min(share * stats.workerCarry / trip * mult * dt, cap)
+			local work, worth = 1, 1
+			if Colony.boost then
+				work, worth = Colony.boost(profile, food) -- castas (Comandante)
+			end
+			local crewHere = if crews then (crews[slot] or 0) elseif food == forced then forcedShare else share
+			-- Con escuadrones, la feromona dulce solo cuenta en los huecos de rastros marcados
+			local scent = if crews and slot <= markedSlots then stats.trailBonus else 1
+			local raw = crewHere * stats.workerCarry / trip * mult * scent * work * dt
+			local gain = math.min(raw, cap * work)
+			table.insert(plan, { food = food, def = def, gain = gain, worth = worth })
+			if def.zone == 1 then
+				garden += gain
+			elseif raw > gain then
+				-- Racimos: lo que no cabe en la comida marcada pasa a las de su racimo (las más cercanas,
+				-- cada una con su propio tope), hasta stats.colonySpread comidas en total
+				for _, other in Colony.clusterMates(profile, food, (stats.colonySpread or 1) - 1) do
+					local otherDef = FoodService.defOf(other)
+					local otherCap = (other:GetAttribute("MaxHp") or otherDef.hp) * dt / BITE_TIME * work
+					local extra = math.min(raw - gain, otherCap)
+					if extra <= 0 then
+						break
+					end
+					gain += extra
+					table.insert(plan, { food = other, def = otherDef, gain = extra, worth = worth })
+				end
+			end
+		end
+		local gardenScale = 1
+		if garden > 0 and Colony.gardenLimit then
+			gardenScale = math.clamp(Colony.gardenLimit(profile, garden, dt) / garden, 0, 1)
+			profile.gardenScale = gardenScale -- lo lee Orders para estimar lo que rinde el jardín
+		end
+
+		for _, item in plan do
+			local food, def = item.food, item.def
+			local gain = if def.zone == 1 then item.gain * gardenScale else item.gain
 			local hp = gain + (profile.remainders[food] or 0)
 			local whole = math.floor(hp)
 			remainders[food] = hp - whole
 			if whole > 0 then
+				local piece = FoodService.pieceValue(food, def, stats) -- antes de dañarla: puede desaparecer
 				local taken, _, finished = FoodService.damage(food, whole)
 				if taken > 0 then
-					credited += Profiles.addFood(profile, taken * def.value * stats.zoneMult[def.zone])
+					credited += Profiles.addFood(profile, taken * piece * (item.worth or 1))
 					Profiles.trackFood(profile, def, taken)
 					Events.fire("Ate", profile, def, taken, true)
 				end
@@ -269,6 +423,10 @@ local function onTrail(player: Player, food: any)
 	end
 	if def.hard and not profile.stats.workersBreakHard then
 		Profiles.say(profile, "Mis obreras no pueden con eso. Hace falta el cuartel", 4)
+		return
+	end
+	if food:GetAttribute("Event") ~= nil then
+		Profiles.say(profile, "Esto se come a mordiscos, no con rastro", 3) -- pan gigante (Garden)
 		return
 	end
 

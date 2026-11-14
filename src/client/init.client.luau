@@ -22,6 +22,10 @@ local Swarm = require(script.Swarm)
 local Targeting = require(script.Targeting)
 local Tree = require(script.Tree)
 local Wardrobe = require(script.Wardrobe)
+local Chain = require(script.Chain)
+local Tunnel = require(script.Tunnel)
+-- Primeros pasos (opcional): mientras dura su cadena de metas, la tira de narración es suya
+local Opening = if script:FindFirstChild("Opening") then require(script.Opening) :: any else nil
 
 local player = Players.LocalPlayer
 -- El servidor tarda unos segundos en levantar el mundo: se espera con margen, sin aviso de espera infinita
@@ -48,11 +52,12 @@ Targeting.start()
 Tree.start(remotes)
 Store.start()
 Wardrobe.start(remotes)
+Tunnel.start(remotes)
 Abilities.start(hud, remotes)
 
 -- Módulos opcionales: cada uno trae su propia interfaz y se arranca solo si existe.
 -- Un fallo en uno no debe tumbar el resto del juego.
-for _, name in { "Life", "Ambience", "Quests", "WorldEvents", "Pets", "Hazards", "Allies" } do
+for _, name in { "Life", "Ambience", "Quests", "WorldEvents", "Pets", "Hazards", "Allies", "Extras", "Perks", "Garden", "Opening", "Juice", "CasteClient", "Social", "Emotes", "Orders", "Stalls" } do
 	local module = script:FindFirstChild(name)
 	if module then
 		local ok, lib = pcall(require, module)
@@ -111,9 +116,16 @@ local function refreshHint()
 	end
 	local carry = State.num("Carry")
 	local fresh = State.num("RunFood") == 0 and State.num("Rebirths") == 0
+	local opening, openingUrgent = nil, nil
+	if Opening then
+		opening, openingUrgent = Opening.hint()
+	end
 
 	if carry >= State.stats().capacity then
-		Bubble.say("¡Voy llena! Al hormiguero", true) -- urgente: no se esconde sola
+		-- Al principio es urgente (no se esconde sola); luego basta con el "¡LLENA!" y la flecha (Juice)
+		Bubble.say("¡Voy llena! Al hormiguero", fresh)
+	elseif opening then
+		Bubble.say(opening, openingUrgent)
 	elseif fresh and carry == 0 and not hasBitten then
 		Bubble.say(if State.flag("P_autoBite") then HOW_TO_AUTOBITE else HOW_TO_BITE)
 	elseif fresh and carry > 0 then
@@ -216,32 +228,17 @@ Hud.onStore = Store.open
 Hud.onWardrobe = Wardrobe.toggle
 Hud.showStore(Store.enabled())
 
-remotes.Fx.OnClientEvent:Connect(function(kind: string, a: any, b: any, c: any, d: any, e: any, f: any)
+remotes.Fx.OnClientEvent:Connect(function(kind: string, a: any, b: any, c: any, d: any, e: any, f: any, g: any)
 	if kind == "Bite" then
 		hasBitten = true
 		Hud.setCombo(e or 0)
-		Fx.biteImpact(a, b, c, d, f == true)
-		if f then -- mordisco dorado (galerías)
-			Fx.burst(a, "¡DORADO!", Color3.fromRGB(255, 190, 40), 220)
-			Sfx.bite(true)
-		elseif c then
-			Fx.burst(a, "¡CRUNCH!", Comic.Yellow)
-			Sfx.bite(true)
-		elseif d then
-			Fx.burst(a, "¡CRAC!", Comic.Red, 170)
-			Sfx.bite(true)
-		else
-			Fx.nibble(a)
-			Sfx.bite(false)
-		end
+		-- c: remate; d: crítico; e: racha; f: mordisco dorado (galerías); g: la comida era dorada.
+		-- Fx.bite pone impacto, palabra, sonido, racha, remate y la ráfaga del área.
+		Fx.bite(a, b, c, d, e, f == true, g == true)
 	elseif kind == "Deposit" then
-		if c then
-			Fx.burst(a, "¡DOBLE!\n+" .. Format.short(b), Comic.Yellow, 240)
-		else
-			Fx.burst(a, "+" .. Format.short(b), Comic.Cyan, 200)
-		end
+		-- Chorro de migajas, el hormiguero traga y palabra con lo acreditado (Fx.deposit)
 		Sfx.deposit()
-		Fx.deposit(a, c)
+		Fx.deposit(a, c, tonumber(b))
 		Hud.punchFood()
 	elseif kind == "Egg" then
 		Fx.burst(a, "¡HUEVO DORADO!\n+" .. Format.short(b), Comic.Yellow, 300)
@@ -278,6 +275,10 @@ remotes.Fx.OnClientEvent:Connect(function(kind: string, a: any, b: any, c: any, 
 		if character then
 			Fx.burst(character:GetPivot().Position + Vector3.new(0, 3, 0), "¡FRENESÍ!", Comic.Red, 260)
 		end
+	elseif kind == "Chain" then
+		Chain.play(a, b, c)
+	elseif kind == "Tunnel" then
+		Tunnel.travel(a, b)
 	elseif kind == "Rebirth" then
 		Hud.setCombo(0)
 		Fx.rebirth(a)
