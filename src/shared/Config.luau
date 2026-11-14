@@ -122,7 +122,7 @@ local function round2(n: number): number
 end
 
 local COUNTS = { 12, 7, 5 }
-local RESPAWNS = { 12, 20, 28 }
+local RESPAWNS = { 5, 9, 14 } -- segundos hasta que reaparece cada comida de una zona
 
 Config.Foods = {}
 for i, entry in FOOD_LIST do
@@ -142,13 +142,13 @@ for i, entry in FOOD_LIST do
 		-- El jardín es grande y es donde se empieza: más comida que en el túnel (la mitad, junto a
 		-- los hormigueros; ver FoodService) y vuelve enseguida
 		def.count = ({ 110, 40, 22 })[slot]
-		def.respawn = ({ 2, 4, 7 })[slot]
+		def.respawn = ({ 1.5, 3, 5 })[slot]
 	end
 	if def.id == "Tarta" then
 		def.boss = true
 		def.hp *= curve.BossHp
 		def.count = 1
-		def.respawn = 90
+		def.respawn = 45
 	end
 	table.insert(Config.Foods, def)
 end

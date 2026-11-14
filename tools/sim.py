@@ -38,7 +38,7 @@ FOOD_IDS = [
 ]
 HARD = {5, 8, 11, 14, 17, 23, 26, 29, 32, 38}
 BOSS = len(FOOD_IDS) - 1
-LOBBY_COUNTS, LOBBY_RESPAWNS = [110, 40, 22], [2, 4, 7]
+LOBBY_COUNTS, LOBBY_RESPAWNS = [110, 40, 22], [1.5, 3, 5]
 foods = []
 for i in range(len(FOOD_IDS)):
     z = i // 3 + 1
@@ -53,7 +53,7 @@ for i in range(len(FOOD_IDS)):
             v=r2(VG**i),
             hard=i in HARD,
             count=[12, 7, 5][slot] if z > 1 else LOBBY_COUNTS[slot],
-            resp=[12, 20, 28][slot] if z > 1 else LOBBY_RESPAWNS[slot],
+            resp=[5, 9, 14][slot] if z > 1 else LOBBY_RESPAWNS[slot],
             boss=i == BOSS,
         )
     )
