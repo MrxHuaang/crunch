@@ -306,7 +306,7 @@ function Stats.derive(nodes, royal, depth: number?, minis: { [string]: boolean }
 		chargeMult = ramp(lvl(nodes, "charged"), EXTRA.Charged.Mult, EXTRA.Charged.MultStep),
 		jawShare = jawShare,
 		bucheShare = ramp(lvl(nodes, "buche"), EXTRA.Buche.Share, EXTRA.Buche.Step),
-		hasOutpost = lvl(nodes, "outpost") > 0,
+		hasOutpost = false, -- Puesto avanzado retirado hasta el rediseño de movilidad (hormigueros de zona)
 		giantInterval = ramp(lvl(nodes, "giantFood"), EXTRA.Giant.Interval, -EXTRA.Giant.Step),
 		giantMult = ramp(lvl(nodes, "giantFood"), EXTRA.Giant.Mult, EXTRA.Giant.MultStep),
 		rainCooldown = ramp(lvl(nodes, "rain"), EXTRA.Rain.Cooldown, -EXTRA.Rain.Step),
@@ -635,7 +635,6 @@ local EFFECT = {
 	buche = function(l)
 		return if l > 0 then "Te guardas el " .. percent(ramp(l, EXTRA.Buche.Share, EXTRA.Buche.Step)) .. " de cada entrega" else "Un solo estómago"
 	end,
-	outpost = has("Puesto en tu zona más honda", "Todo va a casa"),
 	giantFood = function(l)
 		local g = EXTRA.Giant
 		return if l > 0

@@ -172,7 +172,7 @@ local function refreshHint()
 	elseif fresh and carry == 0 and not hasBitten then
 		Bubble.say(if State.flag("P_autoBite") then HOW_TO_AUTOBITE else HOW_TO_BITE)
 	elseif fresh and carry > 0 then
-		Bubble.say("Lleva las migas a tu hormiguero")
+		Bubble.say(if State.depth() >= 2 then "Lleva las migas a un hormiguero: el de casa o el de la zona" else "Lleva las migas a tu hormiguero")
 	elseif canUpgrade and nothingBought() then
 		Bubble.say(HOW_TO_UPGRADE)
 	elseif newZone and Config.Zones[newZone] then

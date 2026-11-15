@@ -1702,6 +1702,10 @@ function Fx.deposit(position: Vector3, doubled: boolean?, credited: number?)
 
 	local hill = State.hill()
 	local hole = if hill then hill:GetPivot().Position else (if typeof(position) == "Vector3" then position - Vector3.new(0, 9, 0) else nil)
+	-- Entrega en un hormiguero de zona: el chorro va a ese montículo, no al de casa
+	if hill and typeof(position) == "Vector3" and ((position - hill:GetPivot().Position) * Vector3.new(1, 0, 1)).Magnitude > 30 then
+		hole = position - Vector3.new(0, 9 * Config.Depot.Scale, 0)
+	end
 	local character = player.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	if not hole or not root or not root:IsA("BasePart") then

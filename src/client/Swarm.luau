@@ -322,11 +322,11 @@ local function updateRoutes(colony, hill: Model, scale: number, showMarkers: boo
 		route.shown = if distance <= stepLen then route.target else route.shown + gap * (stepLen / distance)
 
 		local endPos = route.shown
-		-- Puesto avanzado (módulo Extras): la comida de su zona o más allá sale del puesto, no de casa
+		-- Fuera del jardín, las obreras van y vuelven del hormiguero de esa zona (Config.depotPos)
 		local base, gap0 = hillPos, 9 * scale
-		local outpost, edge = hill:GetAttribute("OutpostPos"), hill:GetAttribute("OutpostZ")
-		if typeof(outpost) == "Vector3" and type(edge) == "number" and endPos.Z <= edge then
-			base, gap0 = outpost, 4
+		local depot = Config.depotPos(Config.zoneAt(endPos.Z))
+		if depot then
+			base, gap0 = depot, 6 * Config.Depot.Scale
 		end
 		local flat = (endPos - base) * Vector3.new(1, 0, 1)
 		local length = flat.Magnitude

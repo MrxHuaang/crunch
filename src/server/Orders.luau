@@ -176,10 +176,7 @@ local function rebuild(profile, st, hillPos: Vector3)
 			and food:GetAttribute("Event") == nil -- el pan gigante se come a mordiscos
 		then
 			local pos = food:GetPivot().Position
-			local reach = ((pos - hillPos) * FLAT).Magnitude
-			if Colony.shortcut then
-				reach = Colony.shortcut(profile, def, pos, reach) -- puesto avanzado (Extras)
-			end
+			local reach = Colony.reach(profile, def, pos, hillPos) -- la misma cuenta que hace Colony
 			local maxHp = (food:GetAttribute("MaxHp") :: number?) or def.hp
 			n += 1
 			local entry = entries[n]

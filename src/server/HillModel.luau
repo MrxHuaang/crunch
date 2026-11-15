@@ -80,8 +80,10 @@ function HillModel.build(mound: Model, info)
 	local rng = Random.new(seed + depth * 1009 + rebirths * 30011)
 
 	local warmth = math.clamp((depth - 1) / 13, 0, 1) * 0.35
+	local tint: Color3? = info.tint -- hormigueros de zona: la tierra toma el color de su zona
 	local function earth(color: Color3): Color3
-		return color:Lerp(WARM, warmth)
+		local c = color:Lerp(WARM, warmth)
+		return if tint then c:Lerp(tint, 0.5) else c
 	end
 	local palette = { earth(SAND), earth(OCHRE), earth(TAN), earth(CLAY) }
 

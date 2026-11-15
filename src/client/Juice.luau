@@ -285,8 +285,16 @@ local function updateArrow(now: number, dt: number)
 	local want = false
 	local dir = Vector3.zero
 	if full and root and hill then
+		-- Al punto de entrega más cercano: casa o el hormiguero de una zona abierta
 		local toHill = (hill:GetPivot().Position - root.Position) * Vector3.new(1, 0, 1)
 		local radius = Config.Anthill.DepositRadius * (State.stats().hillScale or 1)
+		for zone = 2, math.min(State.depth(), #Config.Zones) do
+			local at = Config.depotPos(zone)
+			local toDepot = at and (at - root.Position) * Vector3.new(1, 0, 1)
+			if toDepot and toDepot.Magnitude < toHill.Magnitude then
+				toHill, radius = toDepot, Config.Depot.Radius
+			end
+		end
 		-- Aparece medio segundo después del "¡LLENA!" y se calla al llegar
 		want = toHill.Magnitude > radius + 4 and now - fullAt > 0.5
 		if toHill.Magnitude > 0.01 then

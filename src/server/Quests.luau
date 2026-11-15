@@ -151,14 +151,11 @@ local function edibleFoods(stats)
 	return list
 end
 
--- Segundos de ida y vuelta entre el hormiguero y los racimos de la zona de esa comida (corriendo;
--- con túnel, desde su salida). Config.zoneDistance mide lo mismo que tools/sim.py.
+-- Segundos de ida y vuelta entre el punto de entrega y los racimos de la zona de esa comida (corriendo):
+-- en el jardín, casa; fuera, el hormiguero de esa zona (Config.depotTrip, lo mismo que tools/sim.py).
 local function tripTime(stats, def): number
 	local speed = math.max(stats.walkSpeed, 1) * (1 + (Config.Run.Mult - 1) * 0.85)
-	local distance = Config.zoneDistance(def.zone)
-	if stats.hasTunnel and def.zone > 1 then
-		distance = math.min(distance, Config.Map.DepthIn + 15 + speed * (Config.Tunnel.Travel + 0.8))
-	end
+	local distance = if def.zone > 1 then Config.depotTrip(def.zone) else Config.zoneDistance(def.zone)
 	return math.clamp(2 * distance / speed, 4, 150)
 end
 

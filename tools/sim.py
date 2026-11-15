@@ -92,7 +92,7 @@ SLOT_VALUE = [1, 1.3, 1.7]    # Config.FoodCurve.SlotValue
 # Config.FoodCurve.ZoneValues: lo que vale un trozo de la comida pequeña de cada zona. Ajustado con
 # este simulador para que cada capa dure unos 30 min jugando activo (las capas 12 y 13 no abren
 # mejoras nuevas: su comida tiene que valer mucho más para no estancarse).
-ZONE_VALUES = [1, 2.4, 4.4, 15.5, 36, 61, 670, 1300, 2100, 3600, 11000, 1.2e5, 5.2e5, 8e5]
+ZONE_VALUES = [1, 2.4, 3.6, 11.6, 26, 45, 560, 1010, 1520, 2640, 7380, 1.01e5, 3.44e5, 5.29e5]  # Config.FoodCurve.ZoneValues (rebajado con los hormigueros de zona)
 if os.environ.get("VALUE_FIX"):
     ZONE_VALUES = [v * float(x) for v, x in zip(ZONE_VALUES, os.environ["VALUE_FIX"].split(","))]
 BOSS_HP = 20                  # Config.FoodCurve.BossHp (la tarta)
@@ -164,6 +164,32 @@ def dist(zone):
     return TO_MOUTH + (-zone_start(zone) - MOUTH) + DEPTH_IN
 
 
+# Hormigueros de zona (Config.Depot / Config.depotPos): a la derecha del camino, ZIn dentro de la puerta.
+# Fuera del jardín se entrega ahí, a mano y las obreras.
+DEPOT_X = HALF - 20   # Config.Depot.X
+DEPOT_IN = 12         # Config.Depot.ZIn
+LAST_ZONE_LEN = 320   # Config.Map.LastZoneLength
+
+
+def depot_trip(zone):
+    """Distancia plana media del hormiguero de zona a los centros de la rejilla 3x3 de racimos
+    (misma geometría que FoodService: x en [-Half+14, Half-14], z de z0-25 a z1+16; en la 14, z1+95)."""
+    z0 = zone_start(zone)
+    z1 = z0 - (LAST_ZONE_LEN if zone == 14 else ZONE_LEN)
+    x0, x1 = -HALF + 14, HALF - 14
+    z_near = z0 - CLUSTER_IN
+    z_far = z1 + (95 if zone == 14 else 16)
+    cw, cl = (x1 - x0) / 3, (z_near - z_far) / 3
+    dx, dz = DEPOT_X, z0 - DEPOT_IN
+    total = 0.0
+    for row in range(3):
+        for col in range(3):
+            cx = x0 + (col + 0.5) * cw
+            cz = z_near - (row + 0.5) * cl
+            total += math.hypot(cx - dx, cz - dz)
+    return total / 9
+
+
 # ─────────────────────────── Árbol (Config.Tree) ───────────────────────────
 # id: (capa, máximo, niveles por capa, costo a escala de capa 1, crecimiento)
 N = dict(
@@ -181,7 +207,7 @@ N = dict(
     bee=(2, 6, 1, 60, 100), magnet=(3, 5, 1, 50, 100), beetle=(4, 5, 1, 50, 100), escort=(5, 5, 1, 50, 100),
     stomp=(6, 5, 1, 60, 100), sling=(7, 5, 1, 60, 100), lens=(9, 5, 1, 50, 100), mega=(11, 4, 1, 60, 100),
     goldFood=(2, 5, 0, 60, 4), tunnel=(2, 1, 0, 40, 1), chain=(3, 5, 0, 50, 5),
-    charged=(4, 3, 0, 45, 6), doubleJaw=(9, 3, 0, 50, 8), buche=(6, 5, 0, 45, 5), outpost=(5, 1, 0, 120, 1),
+    charged=(4, 3, 0, 45, 6), doubleJaw=(9, 3, 0, 50, 8), buche=(6, 5, 0, 45, 5),
     lane=(3, 3, 0, 60, 6), giantFood=(7, 3, 0, 50, 8), rain=(8, 5, 1, 60, 100),
 )
 # Cámara madre de cada nodo (Config.Tree parent); "workers" = hace falta al menos una obrera
@@ -191,7 +217,7 @@ PARENT = dict(
     carry="speed", sprint="carry", stamina="sprint", wings="stamina", landing="wings", fullLoad="landing",
     giant="fullLoad", tunnel="stamina", buche="fullLoad", double="giant",
     workerSpeed="workers", workerCarry="workerSpeed", storage="workerCarry", nurse="storage", barracks="nurse",
-    eggs="barracks", queen="eggs", outpost="queen", fungus="queen", legion="fungus", super="legion",
+    eggs="barracks", queen="eggs", fungus="queen", legion="fungus", super="legion",
     sweet="trail", frenzy="sweet", frenzyLen="frenzy", smart="frenzyLen", express="smart", goldFood="sweet",
     lane="frenzy", giantFood="express", hive="express", royalPher="hive",
     magnet="bee", beetle="magnet", escort="beetle", stomp="escort", sling="stomp", rain="sling", lens="sling",
@@ -215,15 +241,15 @@ BEETLE = env("BEETLE", 0.08)  # Config.Allies.Beetle.Share
 BARRACKS = env("BARRACKS", 1.15)  # Config.Colony.Barracks: colonia x esto por nivel de Cuartel
 LEGION = env("LEGION", 1.05)      # Config.Colony.Legion: por nivel de Legión
 SUPER = env("SUPER", 1.35)
-SWEET = env("SWEET", 0.4)
-EXPRESS = env("EXPRESS", 0.85)     # Autopista: viaje de las obreras x esto por nivel         # Feromona dulce: la comida marcada rinde esto más por nivel         # Supercolonia: carga de obreras x esto por nivel
+SWEET = env("SWEET", 0.1)
+EXPRESS = env("EXPRESS", 0.92)     # Autopista: viaje de las obreras x esto por nivel         # Feromona dulce: la comida marcada rinde esto más por nivel         # Supercolonia: carga de obreras x esto por nivel
 TITAN = env("TITAN", 1.3)         # Mandíbula titán: fuerza de mordida x esto por nivel
 WORKER_SPEED, WORKER_CARRY, WORKER_TURN = env("WORKER_SPEED", 16), env("WORKER_CARRY", 1), 1.5
 WORKER_CARRY_G = env("WORKER_CARRY_G", 1.18)      # Config.Worker.CarryGrowth (Obreras fuertes, por nivel)
 BEE = dict(Interval=30, Step=4, Min=10, Full=4, Speed=30, SpeedStep=5)
 GOLD_FOOD = (0.02, 0.004, 5, 1.5)   # Chance, ChanceStep, Mult, MultStep
 CHAIN_SHARE, CHAIN_FIRST = 0.7, 3  # Config.Chain: el primer salto pega First mordiscos; cada siguiente, Share del anterior
-WORKER_SPEED_STEP = env("WORKER_SPEED_STEP", 0.3)   # Obreras rápidas por nivel
+WORKER_SPEED_STEP = env("WORKER_SPEED_STEP", 0.1)   # Obreras rápidas por nivel
 NURSE_CAP = 0.15          # Nodrizas: cupo de guardería por nivel
 QUEEN_MULT, SMART_MULT = 1.15, 1.25  # la reina y el rastro listo también hacen rendir más a la colonia
 MAGNET = dict(Tick=2, Bites=10, Count=1)
@@ -239,8 +265,6 @@ CHARGED = (2.2, 0.6)
 RAIN = dict(Cooldown=45, Step=3, Count=16, CountStep=6, Bites=6)
 GIANT_FOOD = dict(Interval=60, Step=10, Mult=8, MultStep=2)
 TUNNEL_WALK, TUNNEL_TRIP = 15 + DEPTH_IN, 1.2
-OUTPOST_RELAY = env("OUTPOST_RELAY", 0.85)
-OUTPOST_HOP = DEPTH_IN + 10
 LANE_TIME = 0.5
 CHARGE_USE = 0.3
 # Config.Egg (Interval, Seconds, IntervalStep, SecondsStep, MinInterval) y Config.Fungus (Regrow, Duration, Step)
@@ -561,15 +585,14 @@ class Game:
         hops = foods_eaten * (max(1.0, FOOD_HOP - 1.5 * L["reach"] - T["reach"]) / sp + 0.25) + max(0, foods_eaten / FOODS_PER_CLUSTER - 1) * CLUSTER_HOP / sp
         work = bite_time + hops + 1.0
         # Camino de ida y vuelta (Patas ligeras a la ida, Carga viva a la vuelta)
-        d0 = dist(zone)
+        # Fuera del jardín se entrega en el hormiguero de la zona: el tramo es hormiguero de zona <-> racimo
+        d0 = dist(zone) if zone == 1 else depot_trip(zone)
         out = d0 / (sp * (1 + self.pv("lightSpeed") / 100))
         back = d0 / (sp * (1 + self.pv("fullSpeed") / 100))
-        if L["tunnel"] and zone > 1:
-            via = TUNNEL_WALK / sp + TUNNEL_TRIP
-            out, back = min(out, via), min(back, via)
-        if L["outpost"] and zone == self.depth and zone > 1:
-            back = min(back, OUTPOST_HOP / sp)
-        if L["wings"]:
+        # (El túnel ya no acorta este tramo: sale junto a la puerta, donde está el hormiguero de zona)
+        # Las alas llevan a casa o a la entrada de la zona (Abilities.wingsTarget): en el jardín acortan el
+        # viaje; fuera de él no acortan el tramo hormiguero de zona <-> racimo
+        if L["wings"] and zone == 1:
             cd_w = max(5, WINGS_CD - LANDING_CD * L["landing"] - T["wings"])
             flights = min(2.0, (work + out + back) / cd_w)
             legs = sorted([out, back], reverse=True)
@@ -581,11 +604,11 @@ class Game:
         covered = 0.0
         if allies and L["bee"]:
             bspeed = BEE["Speed"] + BEE["SpeedStep"] * (L["bee"] - 1)
-            btrip = 2 * max(d0 / bspeed, 1.6) + 0.75
+            btrip = 2 * max(dist(zone) / bspeed, 1.6) + 0.75  # la abeja vuela a casa (Allies), no al hormiguero de zona
             interval = max(6, max(BEE["Min"], round(BEE["Interval"] - BEE["Step"] * (L["bee"] - 1))) - T["bee"])
             wait = btrip if L["bee"] >= BEE["Full"] else max(btrip, interval)
             covered = (work + walk) / wait
-        if allies and L["sling"] and d0 <= SLING["Range"] + SLING["RangeStep"] * (L["sling"] - 1):
+        if allies and L["sling"] and dist(zone) <= SLING["Range"] + SLING["RangeStep"] * (L["sling"] - 1):
             covered += (work + walk) / (SLING["Cooldown"] - SLING["Step"] * (L["sling"] - 1))
         covered = min(covered, 0.95)
         tm = work + walk * (1 - covered)
@@ -665,9 +688,7 @@ class Game:
             zf = [f for f in foods if f["z"] == z and not f["boss"] and (not f["hard"] or L["barracks"])]
             if not zf:
                 continue
-            reach = dist(z)
-            if L["outpost"] and z == self.depth and z > 1:
-                reach = min(reach, OUTPOST_HOP + OUTPOST_RELAY * (reach - OUTPOST_HOP))
+            reach = dist(z) if z == 1 else depot_trip(z)  # obreras: al hormiguero de su zona
             trip = (2 * reach / ws + WORKER_TURN) * EXPRESS ** L["express"]
             rate = (self.workers + max(0, self.pv("star") - 1)) * wc / trip * mult
             # Van a la comida que más vale; lo que no cabe en una comida (tope de su vida cada 3 s) pasa a

@@ -32,6 +32,7 @@ Todo el juego **se construye por código** al arrancar el servidor: mapa, luz, h
 | --- | --- |
 | **Morder y cargar** | Cada comida tiene vida y se desmonta a mordiscos. Mordisco cargado, doble mandíbula, mordida en cadena (un rayo que salta a las vecinas del racimo) y comida dorada que vale x5. |
 | **El hormiguero** | Árbol de mejoras en corte, como una viñeta larga: cuatro pozos (Mandíbulas, Patas, Colonia, Feromonas) más la rama de Aliadas, 46 cámaras grandes y 504 galerías pequeñas. «Comprar lo barato» gasta media despensa de golpe. |
+| **Hormigueros de zona** | Cada zona del camino tiene a su entrada un hormiguero compartido: quien tenga la zona abierta entrega ahí como en casa, y sus obreras de esa zona también. El de casa sigue siendo tuyo (crece, huevo, hongos, despensa). |
 | **La colonia** | Obreras que repiten tu ruta, rastros de feromonas, órdenes y hasta tres escuadrones (lo más cercano, lo más rico, rematar, a por la grande…). |
 | **Aliadas** | Abeja mensajera, imán, escarabajo de carga, escolta, pisotón, tirachinas, lupa y mega crunch. |
 | **Castas** | Roles con su experiencia, sus mutaciones y tres habilidades cada uno. |
@@ -191,7 +192,7 @@ python tools/sim.py
 python tools/sim.py --audit
 ```
 
-El simulador juega el bucle de verdad, viaje a viaje: ir hasta los racimos de una zona andando y corriendo, morder con su enfriamiento, cadena y área dentro del racimo, llenarse y volver, con túnel, alas, abeja y puesto avanzado. Suma la colonia con sus topes (una comida no cae en menos de 3 s; ninguna zona da más de lo que rebrota) y el resto de ingresos, para tres perfiles: **activo** (85 % del tiempo jugando a mano), **casual** (45 %) y **ausente** (10 %).
+El simulador juega el bucle de verdad, viaje a viaje: ir hasta los racimos de una zona andando y corriendo, morder con su enfriamiento, cadena y área dentro del racimo, llenarse y volver (al hormiguero de casa en el jardín y al de la zona fuera de él, `depot_trip`), con túnel, alas y abeja. Suma la colonia con sus topes (una comida no cae en menos de 3 s; ninguna zona da más de lo que rebrota) y el resto de ingresos, para tres perfiles: **activo** (85 % del tiempo jugando a mano), **casual** (45 %) y **ausente** (10 %).
 
 Por capa imprime minutos, compras, espera más larga entre compras, reparto del ingreso (mano, colonia, ayudantes, extras, misiones, castas y social) y mordiscos por comida y por viaje, y termina con una lista APROBADO/FALLA de los objetivos de ritmo (`--detalle` la enseña entera). `--audit` añade cuánto sube el ingreso cada mejora al comprarla por primera vez y su retorno.
 
@@ -214,7 +215,7 @@ Las 504 galerías se generan solas desde `Config.MiniTune` (costos, cantidades p
 | Carpeta | Qué hay |
 |---|---|
 | `src/shared` | `Config` (balance, zonas, comidas, árbol, tienda y textos), `Stats` (fórmulas), `FoodModels`, `AntModel` y `AntLook` (cómo cambia la hormiga con las mejoras y la ropa), `Assets` (ids de imágenes, sonidos y música) |
-| `src/server` | `World` (jardín, camino, puertas, hormiguero que crece y su cartel), `HillModel`, `Decor`, `Decor2` y `Decor3` (decorado por tema), `Nest` (huevo dorado y hongos), `FoodService`, `PlayerService` (morder, depositar), `Colony` y `Orders` (obreras, órdenes y escuadrones), `Shop` (compras, excavar, vestidor, enjambrar), `Events`, `Monetize`, `Leaderboard`, `Data`, `Profiles`, `DevTools` (panel DEV y `CrunchDebug`, solo en Studio) |
+| `src/server` | `World` (jardín, camino, puertas, hormiguero que crece y su cartel), `HillModel`, `Decor`, `Decor2` y `Decor3` (decorado por tema), `Nest` (huevo dorado y hongos), `FoodService`, `PlayerService` (morder, depositar), `Colony` y `Orders` (obreras, órdenes y escuadrones), `Shop` (compras, excavar, vestidor, enjambrar), `Events`, `Monetize`, `Leaderboard`, `Data`, `Profiles`, `DevTools` (panel DEV y `CrunchDebug`, solo en Studio), `Depots` (hormigueros de zona) |
 | `src/server`, opcionales | `Quests`, `WorldEvents`, `PetService`, `Hazards`, `Allies`, `GoldFood`, `Chain`, `Tunnel`, `Extras`, `Garden`, `Opening`, `Perks` (reglas de las galerías), `CasteService` y `Castes/`, `Social` (despensas y asaltos), `Stalls` (puestos del mapa), `Emotes` |
 | `src/client` | `Tree` (árbol-hormiguero por capas), `Hud`, `Swarm` (dibujo de obreras), `Abilities`, `Places`, `Wardrobe`, `Store`, `Fx`, `Bubble`, `Sfx`, `Comic` (estilo), `State`, `Targeting`, `AntAnim`, `Chain`, `Tunnel` y la parte de cliente de cada módulo opcional (`Life`, `Ambience`, `Allies`, `Extras`…), `DevPanel` (el panel DEV, solo en Studio) |
 | `art` | `gen_art.py` genera texturas e iconos en `art/out`; `promo/` tiene el icono y la miniatura del juego |

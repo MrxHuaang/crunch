@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Stats = require(ReplicatedStorage.Shared.Stats)
+local Depots = require(script.Parent.Depots)
 local Events = require(script.Parent.Events)
 local FoodService = require(script.Parent.FoodService)
 local Profiles = require(script.Parent.Profiles)
@@ -36,6 +37,19 @@ local TICK = 0.5
 local BITE_TIME = 3 -- segundos que, como poco, tarda una colonia en terminar una comida
 local AUTO_TARGETS = 3 -- comidas del jardín a la vez cuando no hay rastros
 local fxRemote: RemoteEvent
+
+-- Distancia de un viaje de obrera (ida): fuera del jardín, hasta el hormiguero de esa zona (Depots); en el
+-- jardín, hasta casa. La usan Colony y Orders, para que las estimaciones coincidan con lo que pasa.
+function Colony.reach(profile, def, foodPos: Vector3, hillPos: Vector3): number
+	if def.zone >= 2 then
+		return Depots.distance(def.zone, foodPos)
+	end
+	local reach = ((foodPos - hillPos) * Vector3.new(1, 0, 1)).Magnitude
+	if Colony.shortcut then
+		reach = Colony.shortcut(profile, def, foodPos, reach) -- puesto avanzado (Extras)
+	end
+	return reach
+end
 
 local function canEat(profile, def): boolean
 	local stats = profile.stats
@@ -301,11 +315,7 @@ local function tick(profile, dt: number)
 			if not canEat(profile, def) then
 				continue
 			end
-			local flat = (food:GetPivot().Position - hillPos) * Vector3.new(1, 0, 1)
-			local reach = flat.Magnitude
-			if Colony.shortcut then
-				reach = Colony.shortcut(profile, def, food:GetPivot().Position, reach) -- puesto avanzado (Extras)
-			end
+			local reach = Colony.reach(profile, def, food:GetPivot().Position, hillPos)
 			local trip = (2 * reach / stats.workerSpeed + Config.Worker.TurnTime) * stats.tripMult
 			-- Tope por comida: lo que no cabe se pierde (esas obreras esperan), no se guarda para luego
 			local cap = (food:GetAttribute("MaxHp") or def.hp) * dt / BITE_TIME

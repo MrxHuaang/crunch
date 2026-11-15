@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Format = require(ReplicatedStorage.Shared.Format)
 local Data = require(script.Parent.Data)
+local Depots = require(script.Parent.Depots)
 local Events = require(script.Parent.Events)
 local FoodService = require(script.Parent.FoodService)
 local Monetize = require(script.Parent.Monetize)
@@ -440,14 +441,22 @@ local function depositLoop()
 			local stats = profile.stats
 			local center = profile.hill:GetPivot().Position
 			local flat = (center - root.Position) * Vector3.new(1, 0, 1)
-			if flat.Magnitude <= Config.Anthill.DepositRadius * stats.hillScale and canReach(profile, root.Position) then
+			-- En casa o en el hormiguero de una zona abierta (Depots): la misma entrega
+			local top: Vector3? = nil
+			if flat.Magnitude <= Config.Anthill.DepositRadius * stats.hillScale then
+				top = center + Vector3.new(0, 9 * stats.hillScale, 0)
+			else
+				local zone = Depots.near(profile, root.Position)
+				top = zone and Depots.top(zone)
+			end
+			if top and canReach(profile, root.Position) then
 				PlayerService.moved(profile, root.Position)
 				local credited, _, doubled = PlayerService.credit(profile, profile.carry, profile.carryValue)
 				profile.carry = 0
 				profile.carryValue = 0
 				Profiles.push(profile)
 				updateCarryVisual(profile)
-				fxRemote:FireClient(player, "Deposit", center + Vector3.new(0, 9 * stats.hillScale, 0), credited, doubled)
+				fxRemote:FireClient(player, "Deposit", top, credited, doubled)
 			end
 		end
 	end

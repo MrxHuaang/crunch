@@ -26,7 +26,9 @@ Las secciones de abajo describen el MVP original. Esto es lo que manda ahora; lo
 
 **Arranque.** Las primeras comidas del jardín (miga, pipa, arándano) están hechas para leerse como comida a escala de hormiga, y la mitad de la comida del jardín sale cerca de los hormigueros y vuelve enseguida: los primeros viajes son cortos. La primera compra llega en segundos y la primera obrera hacia los dos minutos y medio.
 
-**Ritmo.** Según `tools/sim.py`: zona 2 hacia el minuto 10, después entre 30 y 55 minutos por zona (la 8 va más rápida) y unas 7 horas y media la primera partida entera. Es una simulación, falta probarlo con jugadores.
+**Hormigueros de zona.** Cada zona del camino (2 a 14) tiene a su entrada, a la derecha, un hormiguero compartido (`Config.Depot`, módulo `Depots`). Quien tiene la zona abierta (o la llave maestra) entrega ahí como en casa, y sus obreras de esa zona viajan solo hasta él: se acabó volver al jardín en cada viaje. El Puesto avanzado se retiró del árbol; Túnel, Alas, Abeja, Obreras rápidas, Autopista y Feromona dulce se rediseñarán.
+
+**Ritmo.** Según `tools/sim.py` (perfil activo): capa 2 hacia el minuto 9, después unos 30 minutos por capa y unas 6 horas hasta la capa 13. Para mantenerlo con los hormigueros de zona se rebajó el valor de la comida desde la zona 3 (`FoodCurve.ZoneValues`) y lo que rinden Feromona dulce, Obreras rápidas y Autopista. Es una simulación, falta probarlo con jugadores.
 
 **Tienda.** Pases permanentes (comida doble, mordida automática, colonia veloz, alas doradas, VIP, jalea doble, patas turbo, despensa sin fondo) y productos de un uso (poción x2, saco, carretilla, pala dorada, frenesí, huevo dorado, tarros de jalea).
 

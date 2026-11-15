@@ -54,7 +54,7 @@ Config.Anthill = {
 
 Config.Worker = {
 	Speed = 16, -- subió de 8: las zonas son más largas
-	SpeedStep = 0.3, -- Obreras rápidas: velocidad por nivel
+	SpeedStep = 0.1, -- Obreras rápidas: velocidad por nivel (antes 0.3; con hormigueros de zona el viaje es corto)
 	Carry = 1,
 	CarryGrowth = 1.18, -- Obreras fuertes: carga por nivel (más los hitos)
 	TurnTime = 1.5, -- segundos que pierde cada obrera por viaje entre morder y soltar
@@ -68,8 +68,8 @@ Config.Colony = {
 	Barracks = 1.15,
 	Legion = 1.05, -- (y +3 % de comida por nivel: Config.Tree yield)
 	Super = 1.35, -- Supercolonia: carga de cada obrera
-	Express = 0.85, -- Autopista: lo que dura cada viaje
-	Sweet = 0.4, -- Feromona dulce: la comida marcada rinde esto más
+	Express = 0.92, -- Autopista: lo que dura cada viaje (antes 0.85)
+	Sweet = 0.1, -- Feromona dulce: la comida marcada rinde esto más (antes 0.4)
 	Queen = 1.15, -- con la reina, la colonia rinde esto más
 	Smart = 1.25, -- con el rastro listo, la comida marcada rinde esto más
 	NurseCap = 0.15, -- Nodrizas: cupo de guardería por nivel
@@ -162,6 +162,56 @@ local function zone(id, name, theme, floor)
 	return { id = id, name = name, theme = theme, z0 = z0, z1 = z0 - length, floor = floor }
 end
 
+-- Hormigueros de zona: uno compartido a la entrada de cada zona 2..14, a la derecha del camino (la salida
+-- del túnel está a la izquierda). Entregar ahí es como en casa; tus obreras de esa zona también entregan ahí.
+-- Radius: radio de entrega (plano); Scale: tamaño respecto al hormiguero de casa; X: lado; ZIn: fondo desde z0
+Config.Depot = { Radius = 12, Scale = 0.75, X = Config.Map.Half - 20, ZIn = 12 }
+
+-- Dónde está el hormiguero de una zona (nil en el jardín). Servidor, cliente y tools/sim.py usan esta fórmula.
+function Config.depotPos(id: number): Vector3?
+	if id < 2 or id > 14 then
+		return nil
+	end
+	return Vector3.new(Config.Depot.X, Config.GroundY, Config.zoneStart(id) - Config.Depot.ZIn)
+end
+
+-- Distancia media del hormiguero de una zona a los centros de su rejilla 3x3 de racimos (la misma geometría
+-- que FoodService). La usan Quests para estimar viajes y tools/sim.py (depot_trip), que la copia.
+function Config.depotTrip(id: number): number
+	local at = Config.depotPos(id)
+	if not at then
+		return Config.Map.GardenTrip
+	end
+	local zone = Config.Zones[id]
+	local x0, x1 = -Config.Map.Half + 14, Config.Map.Half - 14
+	local zNear = zone.z0 - Config.FoodLayout.Margin
+	local zFar = zone.z1 + (if id == #Config.Zones then 95 else 16)
+	local cellW, cellL = (x1 - x0) / 3, (zNear - zFar) / 3
+	local total = 0
+	for row = 1, 3 do
+		for col = 1, 3 do
+			local c = Vector3.new(x0 + (col - 0.5) * cellW, at.Y, zNear - (row - 0.5) * cellL)
+			total += (c - at).Magnitude
+		end
+	end
+	return total / 9
+end
+
+-- La zona en la que cae una Z del camino (1 = jardín). Cada zona va de 10 studs antes de su puerta a 10
+-- después de su fondo; más allá de la última, la última.
+function Config.zoneAt(z: number): number
+	local map = Config.Map
+	if z > Config.zoneStart(2) + 10 then
+		return 1
+	end
+	for id = 2, 13 do
+		if z >= Config.zoneStart(id) - map.ZoneLength - 10 then
+			return id
+		end
+	end
+	return 14
+end
+
 -- Studs de media del hormiguero a los racimos de una zona: hasta la boca del jardín, por el camino y un
 -- poco dentro (lo usan Quests y tools/sim.py para estimar viajes)
 function Config.zoneDistance(id: number): number
@@ -207,7 +257,8 @@ Config.Zones = {
 Config.FoodCurve = {
 	Bites = { 6, 18, 55 },
 	SlotValue = { 1, 1.3, 1.7 },
-	ZoneValues = { 1, 2.4, 4.4, 15.5, 36, 61, 670, 1300, 2100, 3600, 11000, 1.2e5, 5.2e5, 8e5 },
+	-- Rebajado desde la zona 3 con los hormigueros de zona (viajes cortos): antes 4.4, 15.5, 36, 61, 670, 1300, 2100, 3600, 11000, 1.2e5, 5.2e5, 8e5
+	ZoneValues = { 1, 2.4, 3.6, 11.6, 26, 45, 560, 1010, 1520, 2640, 7380, 1.01e5, 3.44e5, 5.29e5 },
 	Press = { 1, 1.3, 2.1, 2.5, 2.5, 2.4, 3.2, 3.6, 3.8, 3.9, 3.7, 4, 4.2, 4.2 },
 	HardPress = { 1, 1, 1.4, 1.5, 1.5, 1.8, 1.8, 2.8, 3.5, 4.5, 5.1, 5.1, 7, 5.6 },
 	BossHp = 20,
@@ -413,7 +464,7 @@ Config.Tree = {
 	node("barracks", "C", 4, 1, { name = "Cuartel", desc = "Soldados que rompen comida dura y aceleran a toda la colonia.", max = 5, cost = 60, growth = 12, parent = "nurse" }),
 	node("eggs", "C", 4, 2, { name = "Huevos dorados", desc = "Cada cierto tiempo aparece un huevo dorado junto a tu hormiguero. Písalo.", max = 5, cost = 25, growth = 6, parent = "barracks", icon = "nursery", yield = 0.05 }),
 	node("queen", "C", 5, 1, { name = "Reina ponedora", desc = "La reina cría obreras sola cuando hay comida de sobra, y la colonia rinde más.", max = 1, cost = 70, growth = 1, parent = "eggs" }),
-	node("outpost", "C", 5, 2, { name = "Puesto avanzado", desc = "Un hormiguero pequeño a la entrada de tu zona más honda. Entregas allí, y tus obreras de esa zona también.", max = 1, cost = 120, growth = 1, parent = "queen", icon = "anthill" }),
+	-- (Puesto avanzado retirado hasta el rediseño de movilidad: lo sustituyen los hormigueros de zona, Config.Depot)
 	node("fungus", "C", 6, 1, { name = "Jardín de hongos", desc = "Crecen hongos junto a tu hormiguero. Cómete uno y toda la comida vale el doble un rato.", max = 5, cost = 50, growth = 6, parent = "queen", icon = "storage" }),
 	node("legion", "C", 7, 1, { name = "Legión", desc = "La colonia entera trabaja más.", max = 10, cost = 45, growth = 4, parent = "fungus", icon = "barracks", yield = 0.03 }),
 	node("super", "C", 9, 1, { name = "Supercolonia", desc = "Cada obrera carga más.", max = 5, cost = 50, growth = 6, parent = "legion", icon = "workerCarry", yield = 0.05 }),

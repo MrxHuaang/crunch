@@ -12,6 +12,9 @@ local DevTools = require(script.DevTools)
 
 -- El mundo y los remotos existen antes de aceptar jugadores
 World.build()
+-- Hormigueros de zona: después del decorado (lo despejan) y sin retrasar el arranque; la entrega
+-- solo usa Config.depotPos, no el modelo
+task.spawn(require(script.Depots).build)
 
 local remotes = Instance.new("Folder")
 remotes.Name = "Remotes"

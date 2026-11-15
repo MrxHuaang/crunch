@@ -18,6 +18,7 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Colony = require(script.Parent.Colony)
+local Depots = require(script.Parent.Depots)
 local Events = require(script.Parent.Events)
 local FoodService = require(script.Parent.FoodService)
 local PlayerService = require(script.Parent.PlayerService)
@@ -264,6 +265,9 @@ local function atDepot(profile, s, position: Vector3, margin: number): boolean
 		if flat <= Config.Anthill.DepositRadius * profile.stats.hillScale + margin then
 			return true
 		end
+	end
+	if Depots.near(profile, position, margin) then
+		return true -- hormiguero de zona
 	end
 	local o = s.outpost
 	return o ~= nil and ((o.pos - position) * FLAT).Magnitude <= X.Outpost.Radius + margin
