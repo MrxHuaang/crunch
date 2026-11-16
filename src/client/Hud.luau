@@ -31,7 +31,6 @@ local SCALE_MIN = 0.7
 local SCALE_MAX = 1.25
 local MIN_TAP = 44
 local TOUCH = UserInputService.TouchEnabled
-local PHONE = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
 -- Caja de la Comida (diseño)
 local BOX_W = 184
@@ -42,6 +41,7 @@ local SIDE_GAP = 8 -- entre la caja y lo que va a sus lados
 local SIDE_W = 136
 local SIDE_H = 44
 local SIDE_GAP_Y = 6
+local SIDE_W_COMPACT = 96 -- celular: dos columnas que no llegan a las etiquetas de poción/racha
 
 -- Tira de narración: crece con el texto hasta HINT_MAX_WIDTH; si no cabe, dos líneas;
 -- si aun así no cabe, letra más pequeña. Nunca "…".
@@ -88,6 +88,15 @@ Hud.onAnthill = nil :: (() -> ())?
 Hud.onStore = nil :: (() -> ())?
 Hud.onWardrobe = nil :: (() -> ())?
 
+-- Celular: pantalla táctil y pequeña. Decide la distribución (columnas, paneles compactos). Va por
+-- tamaño y no por teclado: el simulador de Studio deja el teclado activo y así se ve como un celular
+-- de verdad; una tablet grande o un PC táctil siguen con la distribución de escritorio.
+function Hud.compact(): boolean
+	local camera = Workspace.CurrentCamera
+	local size = if camera then camera.ViewportSize else Vector2.new(1920, 1080)
+	return UserInputService.TouchEnabled and math.min(size.X, size.Y) < 600
+end
+
 -- Escala de un widget del HUD según el alto de la pantalla. `tap` es el lado más pequeño
 -- (en diseño) de lo que se pulsa dentro: en táctil la escala nunca lo deja por debajo de 44 px.
 function Hud.fitScale(widget: GuiObject, tap: number?): UIScale
@@ -110,6 +119,16 @@ function Hud.fitScale(widget: GuiObject, tap: number?): UIScale
 		camera:GetPropertyChangedSignal("ViewportSize"):Connect(update)
 	end
 	return scale
+end
+
+-- Tamaño de los efectos sueltos en el mundo (palabras de cómic, números, estallidos, bocadillo),
+-- diseñados en píxeles fijos: 1 a 1000 px de alto. Se lee en cada efecto, así sigue a la pantalla.
+function Hud.fxScale(): number
+	if not Hud.compact() then
+		return 1 -- en PC, como siempre
+	end
+	local camera = Workspace.CurrentCamera
+	return if camera then math.clamp(camera.ViewportSize.Y / SCALE_REFERENCE, 0.6, 1.2) else 1
 end
 
 local function tag(parent: Instance, color: Color3, order: number): (TextLabel, UIScale)
@@ -264,6 +283,7 @@ local function buildBottom()
 end
 
 local sideKeys: { [string]: boolean } = {} -- teclas de los paneles de la columna (nombre de KeyCode)
+local compactSide = false -- celular: la columna es una rejilla de botones estrechos (buildSide)
 
 local function sideButton(parent: Instance, order: number, color: Color3, text: string, icon: string?, key: string?): (Frame, TextButton, TextLabel)
 	if key then
@@ -274,21 +294,22 @@ local function sideButton(parent: Instance, order: number, color: Color3, text: 
 	holder.Rotation = if order % 2 == 0 then -1 else 1
 
 	local x = 12
-	if icon then
+	if icon and not compactSide then -- en el botón estrecho del celular no cabe el dibujo con el nombre
 		local image = Comic.image(face, icon)
 		image.Position = UDim2.fromOffset(7, 7)
 		image.Size = UDim2.fromOffset(30, 30)
 		x = 40
 	end
-	-- Nombres largos ("Hormiguero") encogen un poco antes que salirse del botón
+	-- Nombres largos ("Hormiguero") encogen un poco antes que salirse del botón. Alto de una sola
+	-- línea: con dos, TextScaled partía la palabra y se veía "HORMIGUER".
 	local label = Comic.label(face, text, Comic.Display, 22, Comic.Ink)
-	label.Position = UDim2.fromOffset(x, 4)
-	label.Size = UDim2.new(1, -x - 8, 1, -8)
+	label.Position = UDim2.fromOffset(x, 10)
+	label.Size = UDim2.new(1, -x - 8, 0, 24)
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.TextScaled = true
 	local limit = Instance.new("UITextSizeConstraint")
 	limit.MaxTextSize = 22
-	limit.MinTextSize = 14
+	limit.MinTextSize = 12 -- con 14, "HORMIGUERO" junto al dibujo no cabía y salía cortada
 	limit.Parent = label
 
 	if key and UserInputService.KeyboardEnabled then
@@ -451,24 +472,33 @@ end
 
 local function buildSide()
 	-- Pegada al borde izquierdo. En escritorio, centrada en alto (bajo el chat de Roblox);
-	-- en móvil, arriba, para dejar libre la zona del joystick de abajo a la izquierda.
+	-- en celular, rejilla de dos columnas arriba, para dejar libre la zona del joystick (abajo a la izquierda).
+	compactSide = Hud.compact()
 	local column = Comic.frame(gui)
 	column.Name = "Side"
-	if PHONE then
+	if compactSide then
 		column.AnchorPoint = Vector2.new(0, 0)
 		column.Position = UDim2.new(0, 10, 0, 6)
+		-- Ancho fijo: la rejilla reparte las casillas según el ancho del marco; el alto crece solo
+		column.Size = UDim2.fromOffset(SIDE_W_COMPACT * 2 + SIDE_GAP_Y + 2, 0)
+		column.AutomaticSize = Enum.AutomaticSize.Y
+		local grid = Instance.new("UIGridLayout")
+		grid.CellSize = UDim2.fromOffset(SIDE_W_COMPACT, SIDE_H)
+		grid.CellPadding = UDim2.fromOffset(SIDE_GAP_Y, SIDE_GAP_Y)
+		grid.FillDirectionMaxCells = 2
+		grid.SortOrder = Enum.SortOrder.LayoutOrder
+		grid.Parent = column
 	else
 		column.AnchorPoint = Vector2.new(0, 0.5)
 		column.Position = UDim2.new(0, 12, 0.5, 0)
+		column.AutomaticSize = Enum.AutomaticSize.XY
+		local layout = Instance.new("UIListLayout")
+		layout.Padding = UDim.new(0, SIDE_GAP_Y)
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+		layout.Parent = column
 	end
-	column.AutomaticSize = Enum.AutomaticSize.XY
 	Hud.fitScale(column, SIDE_H)
 	sideColumn = column
-
-	local layout = Instance.new("UIListLayout")
-	layout.Padding = UDim.new(0, SIDE_GAP_Y)
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Parent = column
 
 	local hillHolder, hillFace = sideButton(column, 1, Comic.DirtLight, "Hormiguero", Assets.Icons.anthill, "Q")
 	hillFace.MouseButton1Click:Connect(function()
@@ -493,13 +523,18 @@ local function buildSide()
 end
 
 -- Interruptor redondo de la música, abajo a la izquierda. No se recuerda entre partidas.
+-- En celular es la última casilla de la rejilla del menú: abajo a la izquierda está el joystick.
 local function buildMute()
-	local corner = Comic.frame(gui)
+	local corner = Comic.frame(if compactSide then sideColumn else gui)
 	corner.Name = "Music"
-	corner.AnchorPoint = Vector2.new(0, 1)
-	corner.Position = UDim2.new(0, 14, 1, -14)
-	corner.Size = UDim2.fromOffset(48, 48)
-	Hud.fitScale(corner, 44)
+	if compactSide then
+		corner.LayoutOrder = 99 -- la rejilla ya lo escala y le da el tamaño
+	else
+		corner.AnchorPoint = Vector2.new(0, 1)
+		corner.Position = UDim2.new(0, 14, 1, -14)
+		corner.Size = UDim2.fromOffset(48, 48)
+		Hud.fitScale(corner, 44)
+	end
 
 	local holder, face = Comic.button(corner, UDim2.fromOffset(44, 44), Comic.Paper, 4)
 	holder.Rotation = -6

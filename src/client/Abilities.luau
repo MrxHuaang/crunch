@@ -25,10 +25,21 @@ end
 local HOME_RADIUS = 45 -- desde aquí las alas ya no te llevan a casa, sino a tu zona más lejana
 local FLAT = Vector3.new(1, 0, 1)
 local BUTTON = 52 -- lado de los botones redondos (diseño; ~56 px a 1080 de alto)
+local PAD = 8 -- entre botones (diseño)
+local GAP = 10 -- en celular: aire con el botón de saltar y con el de emotes (px reales)
 
 local player = Players.LocalPlayer
 local remotes
 local buttons = {}
+local hud: ScreenGui
+local column: Frame
+local list: UIListLayout
+local grid: UIGridLayout
+local scale: UIScale
+local home: UDim2 -- sitio de la columna fuera del celular
+local homeSize: UDim2
+local laidCompact: boolean? = nil
+local emoteHome: UDim2? = nil
 local sprintReadyAt = 0
 local turboUntil = 0
 local shiftHeld = false -- teclado: corres mientras mantienes Shift
@@ -228,20 +239,34 @@ local function available(id: string): boolean
 end
 
 local function build(gui: ScreenGui)
-	local column = Comic.frame(gui)
+	hud = gui
+	column = Comic.frame(gui)
 	column.Name = "Abilities"
 	column.AnchorPoint = Vector2.new(1, 0.5)
 	-- Pegada al borde derecho. En móvil sube un poco para no pisar el botón de saltar.
 	local phone = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-	column.Position = UDim2.new(1, -12, 0.5, if phone then -36 else 0)
+	home = UDim2.new(1, -12, 0.5, if phone then -36 else 0)
+	homeSize = column.Size
+	column.Position = home
 	column.AutomaticSize = Enum.AutomaticSize.XY
-	Hud.fitScale(column, BUTTON) -- en táctil, nunca por debajo de 44 px
+	scale = Hud.fitScale(column, BUTTON) -- en táctil, nunca por debajo de 44 px
 
-	local layout = Instance.new("UIListLayout")
-	layout.Padding = UDim.new(0, 8)
-	layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Parent = column
+	list = Instance.new("UIListLayout")
+	list.Padding = UDim.new(0, PAD)
+	list.HorizontalAlignment = Enum.HorizontalAlignment.Right
+	list.SortOrder = Enum.SortOrder.LayoutOrder
+	list.Parent = column
+
+	-- Celular: rejilla de 2 columnas que se llena desde abajo a la derecha (lo primero, junto al
+	-- pulgar). Solo se cuelga de la columna en celular (place); en PC sigue la lista de arriba.
+	grid = Instance.new("UIGridLayout")
+	grid.CellSize = UDim2.fromOffset(BUTTON, BUTTON)
+	grid.CellPadding = UDim2.fromOffset(PAD, PAD)
+	grid.FillDirectionMaxCells = 2
+	grid.StartCorner = Enum.StartCorner.BottomRight
+	grid.HorizontalAlignment = Enum.HorizontalAlignment.Right
+	grid.VerticalAlignment = Enum.VerticalAlignment.Bottom
+	grid.SortOrder = Enum.SortOrder.LayoutOrder
 
 	local showKeys = UserInputService.KeyboardEnabled
 
@@ -297,7 +322,64 @@ local function build(gui: ScreenGui)
 				ability.run()
 			end
 		end)
-		buttons[ability.id] = { holder = holder, face = face, icon = icon, wait = wait }
+		buttons[ability.id] = { holder = holder, face = face, icon = icon, wait = wait, tag = tag }
+	end
+end
+
+-- Botón de saltar de Roblox (pantalla sin la barra). Si aún no existe, donde lo pone Roblox en un
+-- celular: 70 px, a 95 px del borde derecho y 90 del de abajo.
+local function jumpRect(): (Vector2, Vector2)
+	local touch = hud.Parent and hud.Parent:FindFirstChild("TouchGui")
+	local frame = touch and touch:FindFirstChild("TouchControlFrame")
+	local jump = frame and frame:FindFirstChild("JumpButton")
+	if jump and jump:IsA("GuiObject") and jump.AbsoluteSize.X > 0 then
+		return jump.AbsolutePosition, jump.AbsoluteSize
+	end
+	return hud.AbsolutePosition + hud.AbsoluteSize - Vector2.new(95, 90), Vector2.new(70, 70)
+end
+
+-- Celular (Hud.compact): rejilla justo encima del botón de saltar, alineada con su borde derecho,
+-- y el botón de emotes a su izquierda, a ras de la fila de abajo. Fuera del celular, todo como
+-- siempre. Se llama a menudo (bucle de enfriamientos): así sigue al giro de pantalla y al botón
+-- de saltar o de emotes, que Roblox y Emotes crean más tarde.
+local function place()
+	local compact = Hud.compact()
+	if compact ~= laidCompact then
+		laidCompact = compact
+		list.Parent = if compact then nil else column
+		grid.Parent = if compact then column else nil
+		column.AnchorPoint = if compact then Vector2.new(1, 1) else Vector2.new(1, 0.5)
+		-- Ancho fijo de 2 botones: con tamaño automático en X la rejilla cabría en una sola columna
+		column.Size = if compact then UDim2.fromOffset(2 * BUTTON + PAD, 0) else homeSize
+		column.AutomaticSize = if compact then Enum.AutomaticSize.Y else Enum.AutomaticSize.XY
+		for _, button in buttons do
+			button.tag.Visible = not compact -- en el celular basta el icono
+		end
+	end
+
+	local emote = hud.Parent and hud.Parent:FindFirstChild("EmoteButton")
+	local emoteHolder = emote and emote:FindFirstChild("Holder")
+	if not (emote and emote:IsA("ScreenGui") and emoteHolder and emoteHolder:IsA("GuiObject")) then
+		emote, emoteHolder = nil, nil
+	elseif not emoteHome then
+		emoteHome = emoteHolder.Position -- solo lo movemos nosotros: la primera vez está en su sitio
+	end
+
+	if not compact then
+		column.Position = home
+		if emoteHolder and emoteHome then
+			emoteHolder.Position = emoteHome
+		end
+		return
+	end
+	local at, size = jumpRect()
+	local right = at.X + size.X
+	local bottom = at.Y - GAP
+	column.Position = UDim2.fromOffset(right - hud.AbsolutePosition.X, bottom - hud.AbsolutePosition.Y)
+	if emote and emoteHolder then
+		-- Su ancla es la esquina de abajo a la derecha: a la izquierda de la rejilla completa
+		local left = right - (2 * BUTTON + PAD) * scale.Scale - GAP
+		emoteHolder.Position = UDim2.fromOffset(left - emote.AbsolutePosition.X, bottom - emote.AbsolutePosition.Y)
 	end
 end
 
@@ -310,6 +392,7 @@ end
 function Abilities.start(gui: ScreenGui, remoteFolder: Folder)
 	remotes = remoteFolder
 	build(gui)
+	place()
 	refreshUnlocks()
 	State.onChange(refreshUnlocks)
 
@@ -349,6 +432,7 @@ function Abilities.start(gui: ScreenGui, remoteFolder: Folder)
 	task.spawn(function()
 		while true do
 			task.wait(0.2)
+			place()
 			for _, ability in LIST do
 				local button = buttons[ability.id]
 				local left = ability.ready()

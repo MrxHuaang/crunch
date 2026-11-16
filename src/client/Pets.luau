@@ -43,6 +43,7 @@ local PERCH_Y = 232
 local BOARD_Y = 470
 local ROW = 120
 local PER_ROW = 4
+local TAP = 38 -- lo más pequeño que se pulsa: el botón "Los mejores"
 
 local EGG = Color3.fromRGB(255, 244, 222)
 local CORK = Color3.fromRGB(206, 160, 108)
@@ -919,7 +920,13 @@ local function buildSheet()
 	releaseFace, releaseLabel = sheetButton(sheet, x + 186, 76, Comic.Paper, onRelease)
 end
 
--- Escala por altura de pantalla sin pasar de casi media pantalla de ancho (como el vestidor)
+-- Sitio del panel: en táctil, bajo la barra de Roblox para que la X no quede bajo sus botones
+local function rest(): UDim2
+	return UDim2.new(1, -MARGIN - 10, 0, MARGIN + Comic.topInset())
+end
+
+-- Escala por altura de pantalla sin pasar de casi media pantalla de ancho (como el vestidor).
+-- En táctil, nunca por debajo del toque mínimo: lo que no quepa ya se desplaza en `body`.
 local function resize()
 	local camera = Workspace.CurrentCamera
 	if not camera or not panel then
@@ -927,8 +934,10 @@ local function resize()
 	end
 	local view = camera.ViewportSize
 	local s = math.clamp(math.min(view.Y / 800, view.X * 0.45 / W), 0.5, 1.25)
+	s = math.max(s, Comic.tapScale(TAP))
 	fit.Scale = s
-	panel.Size = UDim2.fromOffset(W, math.max(240, (view.Y - MARGIN * 2) / s))
+	panel.Size = UDim2.fromOffset(W, math.max(240, (view.Y - MARGIN * 2 - Comic.topInset()) / s))
+	panel.Position = rest()
 end
 
 local function build()
@@ -942,7 +951,7 @@ local function build()
 
 	local holder, panelFace = Comic.box(gui, UDim2.fromOffset(W, 700), Comic.Paper, 10)
 	holder.AnchorPoint = Vector2.new(1, 0)
-	holder.Position = UDim2.new(1, -MARGIN - 10, 0, MARGIN)
+	holder.Position = rest()
 	panelFace.Active = true
 	panelFace.ClipsDescendants = true
 	panel = holder
@@ -1032,9 +1041,8 @@ function Pets.open()
 	paintAll()
 	gui.Enabled = true
 	Sfx.pop(0.9)
-	local rest = UDim2.new(1, -MARGIN - 10, 0, MARGIN)
-	panel.Position = rest + UDim2.fromOffset(W * fit.Scale + 40, 0)
-	TweenService:Create(panel, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = rest }):Play()
+	panel.Position = rest() + UDim2.fromOffset(W * fit.Scale + 40, 0)
+	TweenService:Create(panel, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = rest() }):Play()
 end
 
 function Pets.close()

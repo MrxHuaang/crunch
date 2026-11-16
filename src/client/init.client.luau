@@ -32,14 +32,22 @@ local player = Players.LocalPlayer
 local remotes = ReplicatedStorage:WaitForChild("Remotes", 180) :: Folder
 local foods = Workspace:WaitForChild("Food", 180) :: Instance
 
-player.CameraMaxZoomDistance = 45
-player.CameraMinZoomDistance = 8
+-- Límites de zoom y distancia al aparecer para una hormiga de escala 1. Crecen con ella (fitCamera).
+local ZOOM_MIN, ZOOM_MAX, ZOOM_START = 8, 45, 12.5
+player.CameraMaxZoomDistance = ZOOM_MAX
+player.CameraMinZoomDistance = ZOOM_MIN
 
 -- Una hormiga no tiene barra de vida ni mochila
 pcall(function()
 	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
 	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
 end)
+
+-- El tamaño real de la pantalla decide la distribución de celular (Hud.compact): al primer instante
+-- la cámara aún puede medir 1x1
+while not workspace.CurrentCamera or workspace.CurrentCamera.ViewportSize.X <= 1 do
+	task.wait()
+end
 
 Sfx.start()
 Fx.start()
@@ -240,6 +248,47 @@ local function refresh()
 	refreshHint()
 end
 
+-- Cámara a la medida de la hormiga: AntLook la reescala (ScaleTo) al excavar capas y con 12 studs
+-- acababa tapando media pantalla. Solo se tocan los límites de zoom y, al aparecer o crecer, la
+-- distancia; entre medias el zoom es de la jugadora.
+local zoomCharacter: Model? = nil
+local zoomScale = 1
+
+local function setZoomLimits(min: number, max: number)
+	-- En este orden el mínimo nunca queda por encima del máximo
+	if min > player.CameraMaxZoomDistance then
+		player.CameraMaxZoomDistance = max
+		player.CameraMinZoomDistance = min
+	else
+		player.CameraMinZoomDistance = min
+		player.CameraMaxZoomDistance = max
+	end
+end
+
+local function fitCamera()
+	local character = player.Character
+	if not character then
+		return
+	end
+	local scale = math.max(character:GetScale(), 1) -- nunca más cerca que hoy
+	local spawned = character ~= zoomCharacter
+	if not spawned and math.abs(scale - zoomScale) < 0.05 then
+		return
+	end
+	-- Al aparecer, la distancia de partida; al crecer, la que tenías, en proporción
+	local camera = Workspace.CurrentCamera
+	local distance = ZOOM_START * scale
+	if not spawned and camera then
+		distance = (camera.CFrame.Position - camera.Focus.Position).Magnitude * scale / zoomScale
+	end
+	zoomCharacter, zoomScale = character, scale
+	distance = math.clamp(distance, ZOOM_MIN * scale, ZOOM_MAX * scale)
+	-- Mínimo = máximo durante un fotograma deja la cámara a esa distancia; luego se sueltan
+	setZoomLimits(distance, distance)
+	task.wait()
+	setZoomLimits(ZOOM_MIN * scale, ZOOM_MAX * scale)
+end
+
 -- Bucle ligero para lo que no avisa con atributos del jugador: el huevo dorado (atributo del
 -- hormiguero), si ya pisaste la zona nueva y los paneles abiertos.
 local function updateContext()
@@ -263,6 +312,7 @@ task.spawn(function()
 	while true do
 		task.wait(0.25)
 		updateContext()
+		fitCamera() -- comprueba a ritmo bajo si apareciste o creciste
 	end
 end)
 
@@ -399,14 +449,33 @@ local function isBiteInput(input: InputObject): boolean
 		or input.KeyCode == Enum.KeyCode.ButtonX
 end
 
+-- En táctil solo cuenta el dedo que empezó a morder: soltar el joystick o el salto no lo corta,
+-- y si ese dedo se arrastra es que está girando la cámara.
+local biteTouch: InputObject? = nil
+local biteTouchFrom = Vector3.zero
+local DRAG_PX = 12
+
 UserInputService.InputBegan:Connect(function(input, processed)
 	if not processed and isBiteInput(input) then
 		holding = true
+		if input.UserInputType == Enum.UserInputType.Touch then
+			biteTouch, biteTouchFrom = input, input.Position
+		end
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if input == biteTouch and (input.Position - biteTouchFrom).Magnitude > DRAG_PX then
+		holding, biteTouch = false, nil
 	end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-	if isBiteInput(input) then
+	if input.UserInputType == Enum.UserInputType.Touch then
+		if input == biteTouch then
+			holding, biteTouch = false, nil
+		end
+	elseif isBiteInput(input) then
 		holding = false
 	end
 end)

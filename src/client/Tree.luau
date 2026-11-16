@@ -3,6 +3,7 @@
 -- tierra, y la cámara real al fondo. Cada cámara es una mejora; excavarla es comprarla.
 -- Las capas sin excavar están tapadas: excavar una abre sus cámaras y la zona siguiente del mapa.
 
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -14,6 +15,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Format = require(ReplicatedStorage.Shared.Format)
 local Stats = require(ReplicatedStorage.Shared.Stats)
 local Comic = require(script.Parent.Comic)
+local Hud = require(script.Parent.Hud)
 local Sfx = require(script.Parent.Sfx)
 local State = require(script.Parent.State)
 
@@ -32,9 +34,13 @@ local CONTENT = ROYAL.y + ROYAL.h + 150 -- hueco para los botones fijos de abajo
 local GOLD = Color3.fromRGB(255, 226, 150)
 
 local gui: ScreenGui
+local page: Frame
 local canvas: ScrollingFrame
 local remotes
 local isOpen = false
+local compact = false -- celular: la página llena la pantalla y el corte se recorre en X e Y
+local fitPage: () -> ()
+local swarmShownAt = 0 -- cuándo se abrió la ficha de Enjambrar (el botón espera 1 s)
 
 local nodeViews = {}
 local royalViews = {}
@@ -336,13 +342,16 @@ local function buildRoyal()
 	swarmSub = Comic.label(face, "", Comic.Body, 17, Comic.Paper)
 	at(swarmSub, 0, 46, 190, 26)
 	swarmSub.ZIndex = 7
+	-- Solo abre la ficha: enjambrar borra la partida, así que se confirma en "Enjambrar ya"
+	-- y no con un doble toque sobre este botón
 	face.MouseButton1Click:Connect(function()
-		if selected and selected.kind == "swarm" and State.jellyNow() >= 1 then
-			remotes.Rebirth:FireServer()
-			Tree.close()
-		else
-			select("swarm", "swarm")
-		end
+		swarmShownAt = os.clock()
+		select("swarm", "swarm")
+		task.delay(1, function()
+			if isOpen then
+				Tree.refresh()
+			end
+		end)
 	end)
 
 	-- Los cuatro pozos bajan hasta la cámara real: así las galerías de las capas hondas,
@@ -360,7 +369,13 @@ local function buildRoyal()
 end
 
 local function buildCard()
-	local holder, face = Comic.box(canvas, UDim2.fromOffset(372, 232), Comic.Paper, 8)
+	local holder, face = Comic.box(if compact then gui else canvas, UDim2.fromOffset(372, 232), Comic.Paper, 8)
+	if compact then
+		-- Celular: la ficha va fija abajo a la izquierda, fuera del corte encogido, a tamaño de dedo
+		holder.AnchorPoint = Vector2.new(0, 1)
+		holder.Position = UDim2.new(0, 12, 1, -12)
+		Hud.fitScale(holder, 48)
+	end
 	holder.ZIndex = 30
 	holder.Visible = false
 	holder.Shadow.ZIndex = 30
@@ -425,7 +440,7 @@ local function buildCard()
 			remotes.Buy:FireServer("workers", nil, 1)
 		elseif selected.kind == "node" or selected.kind == "royal" or selected.kind == "mini" then
 			remotes.Buy:FireServer(selected.kind, selected.id)
-		elseif selected.kind == "swarm" and State.jellyNow() >= 1 then
+		elseif selected.kind == "swarm" and State.jellyNow() >= 1 and os.clock() - swarmShownAt >= 1 then
 			remotes.Rebirth:FireServer()
 			Tree.close()
 		end
@@ -446,9 +461,14 @@ local function buildCard()
 	cardParts = { icon = icon, name = name, branch = branch, desc = desc, effect = effect, buy = buy, max = max }
 end
 
+-- Alto visible del corte (diseño): H en PC, menos en celular
+local function viewH(): number
+	return page.Size.Y.Offset
+end
+
 local function scrollTo(y: number)
-	local target = math.clamp(y, 0, CONTENT - H)
-	TweenService:Create(canvas, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { CanvasPosition = Vector2.new(0, target) }):Play()
+	local target = math.clamp(y, 0, CONTENT - viewH())
+	TweenService:Create(canvas, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { CanvasPosition = Vector2.new(canvas.CanvasPosition.X, target) }):Play()
 end
 
 local function build()
@@ -471,20 +491,33 @@ local function build()
 	dim.Parent = gui
 	dim.MouseButton1Click:Connect(Tree.close)
 
-	local page = Comic.frame(gui)
-	page.AnchorPoint = Vector2.new(0.5, 0.5)
+	compact = Hud.compact()
+	page = Comic.frame(gui)
+	page.AnchorPoint = if compact then Vector2.zero else Vector2.new(0.5, 0.5)
 	page.Position = UDim2.fromScale(0.5, 0.5)
 	page.Size = UDim2.fromOffset(W, H)
-	local fit = Instance.new("UIScale")
+	-- Celular: en vez de encoger la página entera, escala con piso (galerías y botones de 50 de
+	-- diseño a 44 px reales) y la página llena la pantalla bajo la barra de Roblox
+	local fit = if compact then Hud.fitScale(page, 50) else Instance.new("UIScale")
 	fit.Parent = page
 	local function resize()
 		local camera = Workspace.CurrentCamera
-		if camera then
-			local view = camera.ViewportSize
-			fit.Scale = math.min(view.X / W, view.Y / H) * 0.94
+		if not camera then
+			return
+		end
+		local view = camera.ViewportSize
+		local top = GuiService:GetGuiInset().Y
+		if compact then
+			page.Position = UDim2.fromOffset(0, top)
+			page.Size = UDim2.fromOffset(view.X / fit.Scale, (view.Y - top) / fit.Scale)
+		else
+			-- El tercer tope solo actúa en ventanas bajas: deja la X (y = 30) bajo la barra de Roblox
+			fit.Scale = math.min(view.X / W * 0.94, view.Y / H * 0.94, (view.Y - 2 * top) / (H - 60))
 		end
 	end
+	fitPage = resize
 	resize()
+	fit:GetPropertyChangedSignal("Scale"):Connect(resize)
 	Workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(resize)
 
 	local shadow = Comic.frame(page, Comic.Ink)
@@ -501,8 +534,8 @@ local function build()
 	canvas.BackgroundTransparency = 1
 	canvas.BorderSizePixel = 0
 	canvas.Size = UDim2.fromScale(1, 1)
-	canvas.CanvasSize = UDim2.fromOffset(0, CONTENT)
-	canvas.ScrollingDirection = Enum.ScrollingDirection.Y
+	canvas.CanvasSize = UDim2.fromOffset(if compact then W else 0, CONTENT)
+	canvas.ScrollingDirection = if compact then Enum.ScrollingDirection.XY else Enum.ScrollingDirection.Y
 	canvas.ScrollBarThickness = 14
 	canvas.ScrollBarImageColor3 = Comic.Ink
 	canvas.ElasticBehavior = Enum.ElasticBehavior.Never
@@ -611,18 +644,20 @@ local function build()
 	buildCard()
 
 	-- Fijo sobre el corte: la comida, el atajo a la cámara real y cerrar
+	-- Pegado al borde derecho y de abajo: en celular la página es más estrecha que W (en PC, igual)
 	local bar = Comic.frame(face)
-	bar.Size = UDim2.fromOffset(W, 110)
+	bar.Size = UDim2.new(1, 0, 0, 110)
 	bar.ZIndex = 40
 
 	foodLabel = Comic.label(bar, "", Comic.Display, 46, Comic.Yellow)
-	at(foodLabel, W - 640, 34, 500, 52)
+	foodLabel.Position = UDim2.new(1, -640, 0, 34)
+	foodLabel.Size = UDim2.fromOffset(500, 52)
 	foodLabel.TextXAlignment = Enum.TextXAlignment.Right
 	foodLabel.ZIndex = 41
 	Comic.ink(foodLabel, 4)
 
 	local closeHolder, closeFace = Comic.button(bar, UDim2.fromOffset(62, 62), Comic.Red, 5)
-	at(closeHolder, W - 110, 30)
+	closeHolder.Position = UDim2.new(1, -110, 0, 30)
 	closeHolder.ZIndex = 41
 	closeHolder.Shadow.ZIndex = 41
 	closeFace.ZIndex = 42
@@ -632,7 +667,7 @@ local function build()
 	closeFace.MouseButton1Click:Connect(Tree.close)
 
 	local deepHolder, deepFace = Comic.button(face, UDim2.fromOffset(210, 50), GOLD, 5)
-	at(deepHolder, W - 250, H - 78)
+	deepHolder.Position = UDim2.new(1, -250, 1, -78)
 	deepHolder.ZIndex = 41
 	deepHolder.Shadow.ZIndex = 41
 	deepFace.ZIndex = 42
@@ -641,7 +676,7 @@ local function build()
 	deepLabel.ZIndex = 43
 	deepFace.MouseButton1Click:Connect(function()
 		-- Abajo del todo; si ya estás, vuelve a tu capa
-		if canvas.CanvasPosition.Y > CONTENT - H - 40 then
+		if canvas.CanvasPosition.Y > CONTENT - viewH() - 40 then
 			scrollTo(bandTop(State.depth()) - 120)
 		else
 			scrollTo(CONTENT)
@@ -692,7 +727,9 @@ end
 local function showCard(x: number, y: number, above: boolean, info)
 	local cx = if above then x - 186 else (if x < 1000 then x + 64 else x - 64 - 372)
 	local cy = if above then y - 300 else math.clamp(y - 100, SURFACE + 14, CONTENT - 250)
-	card.Position = UDim2.fromOffset(math.clamp(cx, 14, W - 400), cy)
+	if not compact then -- en celular la ficha tiene sitio fijo
+		card.Position = UDim2.fromOffset(math.clamp(cx, 14, W - 400), cy)
+	end
 	card.Visible = true
 
 	cardParts.icon.Image = info.icon or ""
@@ -936,7 +973,7 @@ function Tree.refresh(): boolean
 					then "Ahora ganarías " .. Format.short(gain) .. " de jalea." .. (if State.flag("TartaDone") then "" else "\nCon la tarta comida, el doble.")
 					else "Todavía no has reunido comida para una gota de jalea. Sigue hasta la zona 7.",
 				buyText = if gain >= 1 then "Enjambrar ya" else nil,
-				canBuy = true,
+				canBuy = os.clock() - swarmShownAt >= 1, -- gris el primer segundo
 			})
 		end
 	end
@@ -1152,8 +1189,9 @@ end
 function Tree.open()
 	isOpen = true
 	gui.Enabled = true
+	fitPage() -- la barra de Roblox puede medir distinto que al construir
 	Sfx.pop(0.9)
-	canvas.CanvasPosition = Vector2.new(0, math.clamp(bandTop(State.depth()) - 150, 0, CONTENT - H))
+	canvas.CanvasPosition = Vector2.new(0, math.clamp(bandTop(State.depth()) - 150, 0, CONTENT - viewH()))
 	Tree.refresh()
 end
 
@@ -1178,7 +1216,7 @@ function Tree.start(remoteFolder: Folder)
 	UserInputService.InputBegan:Connect(function(input, processed)
 		if not processed and (input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.ButtonY) then
 			Tree.toggle()
-		elseif isOpen and input.KeyCode == Enum.KeyCode.Escape then
+		elseif isOpen and input.KeyCode == Enum.KeyCode.Escape then -- como la tienda: Roblox marca Esc como procesada
 			Tree.close()
 		end
 	end)

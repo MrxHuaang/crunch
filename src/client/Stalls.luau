@@ -407,9 +407,17 @@ local function openCounter(heading: string, rows)
 	local H = math.min(110 + #rows * rowH, 560)
 	local page = Comic.frame(gui)
 	page.AnchorPoint = Vector2.new(0.5, 0.5)
-	page.Position = UDim2.fromScale(0.5, 0.5)
+	-- En táctil, centrada bajo la barra de Roblox para que la X no quede bajo sus botones
+	local inset = Comic.topInset()
+	page.Position = UDim2.new(0.5, 0, 0.5, inset / 2)
+	-- En táctil nunca por debajo de 44 px lo que se pulsa: si no cabe en alto, se recorta y
+	-- la lista (que ya se desplaza) enseña menos filas. En PC el recorte no llega a actuar.
+	local fit = Comic.autoScale(page, 820, 44)
+	local camera = Workspace.CurrentCamera
+	if camera then
+		H = math.min(H, (camera.ViewportSize.Y - inset - 60) / fit.Scale)
+	end
 	page.Size = UDim2.fromOffset(W, H)
-	Comic.autoScale(page, 820)
 
 	local holder, face = Comic.box(page, UDim2.fromScale(1, 1), PAPER, 8)
 	holder.Rotation = -0.8
@@ -1178,11 +1186,13 @@ local function banner(text: string, color: Color3)
 	holder.AnchorPoint = Vector2.new(0.5, 0)
 	holder.Position = UDim2.new(0.5, 0, 0, -90)
 	holder.Rotation = -1
-	Comic.autoScale(holder, 900)
+	-- En táctil la franja no baja de 44 px de alto y el texto va en dos líneas: así se lee
+	Comic.autoScale(holder, 900, 64)
 	local label = Comic.label(face, text, Comic.Display, 30, INK)
 	label.Size = UDim2.new(1, -24, 1, -8)
 	label.Position = UDim2.fromOffset(12, 4)
 	label.TextScaled = true
+	label.TextWrapped = UserInputService.TouchEnabled
 	TweenService:Create(holder, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = UDim2.new(0.5, 0, 0, 96) }):Play()
 	task.delay(6, function()
 		local out = TweenService:Create(holder, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Position = UDim2.new(0.5, 0, 0, -90) })

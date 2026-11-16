@@ -30,6 +30,8 @@ local COOKIE_W = 250
 local COOKIE_H = 26
 local BITES = 10
 local HOLE = 40
+local TAP = HOLE -- lo más pequeño que se pulsa (el botón de cambiar misión lleva zona de toque)
+local TOP = 72 -- alto de la cabecera fija (rótulo y X); debajo, notas y tarjeta se desplazan
 
 local CORK = Color3.fromRGB(196, 146, 92)
 local MANILA = Color3.fromRGB(240, 214, 160)
@@ -44,6 +46,7 @@ local remote: RemoteEvent
 local gui: ScreenGui
 local panel: Frame
 local fit: UIScale
+local list: ScrollingFrame
 local side -- botón lateral del HUD
 local isOpen = false
 
@@ -262,7 +265,7 @@ local function buildNote(parent: Instance, index: number, y: number)
 		Comic.punch(stampScale, 0.8)
 		send("Claim", index)
 	end)
-	rerollFace.MouseButton1Click:Connect(function()
+	local function reroll()
 		if os.clock() < rerollAt[index] then
 			shake(rerollHolder)
 			Sfx.pop(0.7)
@@ -270,7 +273,10 @@ local function buildNote(parent: Instance, index: number, y: number)
 		end
 		Sfx.pop(1.1)
 		send("Reroll", index)
-	end)
+	end
+	rerollFace.MouseButton1Click:Connect(reroll)
+	-- Se ve bajito (26): en táctil su zona de toque llega a 44 de diseño (≥ 44 px con la escala)
+	Comic.touchPad(rerollHolder, rerollFace, 44, reroll)
 	return view
 end
 
@@ -547,13 +553,27 @@ end
 
 -- Panel -------------------------------------------------------------------------------------
 
+-- Sitio del panel: en táctil, bajo la barra de Roblox para que la X no quede bajo sus botones
+local function rest(): UDim2
+	return UDim2.new(1, -MARGIN - 10, 0, MARGIN + Comic.topInset())
+end
+
 local function resize()
 	local camera = Workspace.CurrentCamera
 	if not camera or not panel then
 		return
 	end
 	local view = camera.ViewportSize
-	fit.Scale = math.clamp(math.min((view.Y - MARGIN * 2) / H, view.X * 0.45 / W), 0.4, 1.2)
+	local room = view.Y - MARGIN * 2 - Comic.topInset()
+	local s = math.clamp(math.min(room / H, view.X * 0.45 / W), 0.4, 1.2)
+	-- En táctil no se encoge por debajo del toque mínimo: si no cabe, se recorta y se desplaza
+	s = math.max(s, Comic.tapScale(TAP))
+	fit.Scale = s
+	local height = math.min(H, room / s)
+	panel.Size = UDim2.fromOffset(W, height)
+	panel.Position = rest()
+	list.ScrollingEnabled = height < H
+	list.ScrollBarThickness = if height < H then 8 else 0
 end
 
 local function build()
@@ -567,7 +587,7 @@ local function build()
 
 	local holder, face = Comic.box(gui, UDim2.fromOffset(W, H), CORK, 10)
 	holder.AnchorPoint = Vector2.new(1, 0)
-	holder.Position = UDim2.new(1, -MARGIN - 10, 0, MARGIN)
+	holder.Position = rest()
 	face.Active = true
 	face.ClipsDescendants = true
 	panel = holder
@@ -607,12 +627,25 @@ local function build()
 	cross.ZIndex = 6
 	closeFace.MouseButton1Click:Connect(Quests.close)
 
-	local y = 84
+	-- Notas y tarjeta en una lista: en PC cabe entera y no se mueve; en celular se desplaza
+	list = Instance.new("ScrollingFrame")
+	list.BackgroundTransparency = 1
+	list.BorderSizePixel = 0
+	list.Position = UDim2.fromOffset(0, TOP)
+	list.Size = UDim2.new(1, 0, 1, -TOP)
+	list.CanvasSize = UDim2.fromOffset(0, H - TOP)
+	list.ScrollingDirection = Enum.ScrollingDirection.Y
+	list.ScrollBarImageColor3 = Comic.Ink
+	list.ElasticBehavior = Enum.ElasticBehavior.Never
+	list.ZIndex = 3
+	list.Parent = face
+
+	local y = 84 - TOP
 	for index = 1, 3 do
-		notes[index] = buildNote(face, index, y)
+		notes[index] = buildNote(list, index, y)
 		y += NOTE_H + 14
 	end
-	buildCard(face, y + 6)
+	buildCard(list, y + 6)
 
 	resize()
 	local camera = Workspace.CurrentCamera
@@ -639,9 +672,8 @@ function Quests.open()
 	send("Sync") -- los premios crecen con tu colonia: que lleguen al día
 	refreshBadge()
 	Sfx.pop(0.9)
-	local rest = UDim2.new(1, -MARGIN - 10, 0, MARGIN)
-	panel.Position = rest + UDim2.fromOffset(W * fit.Scale + 40, 0)
-	TweenService:Create(panel, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = rest }):Play()
+	panel.Position = rest() + UDim2.fromOffset(W * fit.Scale + 40, 0)
+	TweenService:Create(panel, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = rest() }):Play()
 end
 
 function Quests.close()

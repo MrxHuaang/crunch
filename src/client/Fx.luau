@@ -18,6 +18,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Format = require(ReplicatedStorage.Shared.Format)
 local AntAnim = require(script.Parent.AntAnim)
 local Comic = require(script.Parent.Comic)
+local Hud = require(script.Parent.Hud)
 local Sfx = require(script.Parent.Sfx)
 local State = require(script.Parent.State)
 
@@ -249,10 +250,12 @@ function Fx.number(position: Vector3, amount: number, crit: boolean?, golden: bo
 	local n = numbers[nextNumber]
 	local big = crit or golden
 	local grow = math.clamp(boost or 0, 0, 1)
+	local fit = Hud.fxScale() -- píxeles fijos: en celular llenaban la pantalla
+	n.gui.Size = UDim2.fromOffset(170 * fit, 72 * fit)
 
 	n.label.Text = "+" .. Format.short(amount) .. (if big then "!" else "")
 	n.label.TextColor3 = if golden then GOLD elseif crit then Comic.Yellow else Comic.Paper:Lerp(Comic.Yellow, grow * 0.6)
-	n.label.TextSize = math.floor((if golden then 46 elseif crit then 44 else 30) + 10 * grow)
+	n.label.TextSize = math.floor(((if golden then 46 elseif crit then 44 else 30) + 10 * grow) * fit)
 	n.label.Rotation = rng:NextNumber(-12, 12)
 	n.label.TextTransparency = 0
 	n.stroke.Thickness = if big then 4 else 3
@@ -1253,7 +1256,8 @@ function Fx.word(position: Vector3, text: string, color: Color3, size: number, o
 		return
 	end
 	local life = o.life or 0.6
-	local px = math.floor(math.clamp(size, 16, 84))
+	-- Todo lo demás (caja, sombra, tinta) sale de px: escalarlo aquí basta para el celular
+	local px = math.floor(math.clamp(size, 16, 84) * Hud.fxScale())
 	local chars = utf8.len(text) or #text
 	local longest = 0
 	for line in string.gmatch(text, "[^\n]+") do
@@ -1840,6 +1844,10 @@ function Fx.start()
 	overlay.ResetOnSpawn = false
 	overlay.DisplayOrder = -5
 	overlay.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+	if Hud.compact() then
+		-- Celular: menos palabras sueltas; la pequeña del mordisco ya no sale en cada uno
+		wordBudget = bucket(1.5, 2)
+	end
 
 	-- Viñeta de trama en los bordes: da el aire de dibujo animado antiguo
 	local vignette = Comic.image(overlay, Assets.Vignette)
@@ -1873,10 +1881,11 @@ end
 -- Palabra pequeña que sube y se desvanece. Una por mordisco.
 function Fx.nibble(position: Vector3)
 	nibbleIndex = nibbleIndex % #NIBBLES + 1
+	local fit = Hud.fxScale()
 	local part = anchorAt(position + Vector3.new(0, 1.2, 0), 0.6)
-	local billboard = billboardOn(part, 120, 48)
+	local billboard = billboardOn(part, 120 * fit, 48 * fit)
 
-	local label = Comic.label(billboard, NIBBLES[nibbleIndex], Comic.Display, 30, Comic.Paper)
+	local label = Comic.label(billboard, NIBBLES[nibbleIndex], Comic.Display, math.floor(30 * fit), Comic.Paper)
 	label.Size = UDim2.fromScale(1, 1)
 	label.Rotation = rng:NextNumber(-16, 16)
 	local stroke = Comic.ink(label, 3)
@@ -1889,13 +1898,14 @@ function Fx.nibble(position: Vector3)
 end
 
 -- Estallido con texto grande. Para momentos que importan, pero como floritura: el diámetro
--- pedido se reduce a ~62 % y nunca pasa de BURST_MAX px, y todo dura menos de 0.9 s.
+-- pedido se reduce a ~62 % y nunca pasa de BURST_MAX px (a 1000 px de alto de pantalla; escala con
+-- ella), y todo dura menos de 0.9 s.
 -- El texto lleva su propia tinta: se lee aunque la imagen del estallido no llegue a cargar.
 local BURST_MAX = 170
 local BURST_MIN = 96
 
 function Fx.burst(position: Vector3, text: string, color: Color3, diameter: number?)
-	local size = math.clamp(math.floor((diameter or 220) * 0.62), BURST_MIN, BURST_MAX)
+	local size = math.floor(math.clamp((diameter or 220) * 0.62, BURST_MIN, BURST_MAX) * Hud.fxScale())
 	local part = anchorAt(position + Vector3.new(0, 2.5, 0), 0.8)
 	local billboard = billboardOn(part, size + 16, size + 16)
 

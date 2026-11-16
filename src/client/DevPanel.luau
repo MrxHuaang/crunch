@@ -9,6 +9,7 @@ local UserInputService = game:GetService("UserInputService")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Stats = require(ReplicatedStorage.Shared.Stats)
 local Comic = require(script.Parent.Comic)
+local Hud = require(script.Parent.Hud)
 
 local DevPanel = {}
 
@@ -201,14 +202,6 @@ function DevPanel.start(remotes: Folder)
 	gui.DisplayOrder = 50
 	gui.Parent = player:WaitForChild("PlayerGui")
 
-	-- Botón para abrir, abajo a la izquierda encima del de música (a media altura está el menú del HUD)
-	local toggleHolder, toggle = Comic.button(gui, UDim2.fromOffset(64, 40), Comic.Red, 3)
-	toggleHolder.AnchorPoint = Vector2.new(0, 1)
-	toggleHolder.Position = UDim2.new(0, 14, 1, -84)
-	local toggleLabel = Comic.label(toggle, "DEV", Comic.Display, 22, Comic.Paper)
-	toggleLabel.Size = UDim2.fromScale(1, 1)
-	Comic.autoScale(toggleHolder)
-
 	local holder, face = Comic.box(gui, UDim2.fromOffset(W, H), Comic.Paper, 5)
 	holder.Name = "Panel"
 	holder.AnchorPoint = Vector2.new(0, 0.5)
@@ -271,7 +264,19 @@ function DevPanel.start(remotes: Folder)
 	local function flip()
 		holder.Visible = not holder.Visible
 	end
-	toggle.Activated:Connect(flip)
+	if Hud.compact() then
+		-- Celular: una casilla más del menú del HUD. Suelto tapaba la Tienda (y arriba, la X de los paneles)
+		Hud.addSideButton("DEV", nil, Comic.Red, flip)
+	else
+		-- PC: abajo a la izquierda encima del de música (a media altura está el menú del HUD)
+		local toggleHolder, toggle = Comic.button(gui, UDim2.fromOffset(64, 40), Comic.Red, 3)
+		toggleHolder.AnchorPoint = Vector2.new(0, 1)
+		toggleHolder.Position = UDim2.new(0, 14, 1, -84)
+		local toggleLabel = Comic.label(toggle, "DEV", Comic.Display, 22, Comic.Paper)
+		toggleLabel.Size = UDim2.fromScale(1, 1)
+		Comic.autoScale(toggleHolder)
+		toggle.Activated:Connect(flip)
+	end
 	UserInputService.InputBegan:Connect(function(input, processed)
 		if not processed and input.KeyCode == Enum.KeyCode.F2 then
 			flip()

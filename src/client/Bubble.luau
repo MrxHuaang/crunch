@@ -18,6 +18,7 @@ local LIFT = 4.2 -- studs sobre la cabeza con la hormiga a tamaño normal
 
 local player = Players.LocalPlayer
 local billboard: BillboardGui
+local root: Frame
 local textLabel: TextLabel
 local pop: UIScale
 local shown: string? = nil
@@ -36,7 +37,11 @@ local function place(text: string)
 	local scale = if character then character:GetScale() else 1
 	billboard.StudsOffsetWorldSpace = Vector3.new(0, LIFT * scale, 0)
 	local long = (utf8.len(text) or #text) > 44
-	billboard.Size = UDim2.fromOffset(WIDTH, if long then TALL else HEIGHT)
+	-- El globo se dibuja a tamaño de diseño y `pop` lo escala a la pantalla (en celular lo llenaba)
+	root.Size = UDim2.fromOffset(WIDTH, if long then TALL else HEIGHT)
+	local fit = Hud.fxScale()
+	billboard.Size = UDim2.fromOffset(WIDTH * fit, (if long then TALL else HEIGHT) * fit)
+	return fit
 end
 
 function Bubble.start()
@@ -50,10 +55,10 @@ function Bubble.start()
 	billboard.Enabled = false
 	billboard.Parent = player:WaitForChild("PlayerGui")
 
-	local root = Comic.frame(billboard)
+	root = Comic.frame(billboard)
 	root.AnchorPoint = Vector2.new(0.5, 1)
 	root.Position = UDim2.fromScale(0.5, 1)
-	root.Size = UDim2.fromScale(1, 1)
+	root.Size = UDim2.fromOffset(WIDTH, HEIGHT)
 
 	pop = Instance.new("UIScale")
 	pop.Parent = root
@@ -114,11 +119,11 @@ function Bubble.flash(text: string, seconds: number)
 	if text ~= shown then
 		-- Un mensaje nuevo rebota; el mismo repetido solo alarga su tiempo
 		shown = text
-		place(text)
+		local fit = place(text)
 		textLabel.Text = text
 		billboard.Enabled = true
-		pop.Scale = 0.4
-		TweenService:Create(pop, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+		pop.Scale = 0.4 * fit
+		TweenService:Create(pop, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = fit }):Play()
 	end
 	task.delay(seconds, function()
 		if flashToken == token then

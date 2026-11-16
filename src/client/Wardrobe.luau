@@ -9,6 +9,7 @@
 -- La cortina de arriba enseña todo o solo lo tuyo. Se compra con comida una vez y es para siempre;
 -- ponérselo luego es gratis.
 
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -97,7 +98,8 @@ local dragging: InputObject? = nil
 local dragX = 0
 local lastDrag = -10
 local swoosh: Frame
-local swooshPaint: UIGradient
+local phoneLayout = false -- móvil (Hud.compact): peana a todo el alto y botes en el estante
+local potsInRack = false -- dónde se dibujaron los botes la última vez
 
 -- Mostrador de abajo
 local action = {} :: any
@@ -229,16 +231,22 @@ local function paintSwoosh()
 	local def = Trails.byId[wearing("trail")]
 	local colors = def and def.colors
 	swoosh.Visible = colors ~= nil and #colors > 0
+	for _, band in swoosh:GetChildren() do
+		if band:IsA("Frame") then
+			band:Destroy()
+		end
+	end
 	if swoosh.Visible then
-		local keys = {}
-		local count = #colors
-		for k, color in colors do
-			table.insert(keys, ColorSequenceKeypoint.new(if count == 1 then 0 else (k - 1) / (count - 1), color))
+		-- Una franja plana por color, de la cola a la punta (sin degradado). Cada franja es una píldora
+		-- que llega hasta la punta y tapa a la anterior: así la punta sigue redonda.
+		swoosh.BackgroundColor3 = colors[1]
+		for k = 2, #colors do
+			local band = Comic.frame(swoosh, colors[k])
+			band.Position = UDim2.fromScale((k - 1) / #colors, 0)
+			band.Size = UDim2.fromScale(1 - (k - 1) / #colors, 1)
+			band.ZIndex = swoosh.ZIndex
+			Comic.round(band)
 		end
-		if count == 1 then
-			table.insert(keys, ColorSequenceKeypoint.new(1, colors[1]))
-		end
-		swooshPaint.Color = ColorSequence.new(keys)
 	end
 end
 
@@ -352,19 +360,14 @@ end
 
 local function paintRibbon(frame: GuiObject, colors: { Color3 }?)
 	if colors and #colors > 0 then
-		frame.BackgroundColor3 = Color3.new(1, 1, 1)
-		local keys = {}
-		local count = #colors
-		for k, color in colors do
-			table.insert(keys, ColorSequenceKeypoint.new(if count == 1 then 0 else (k - 1) / (count - 1), color))
+		-- Una franja plana por color, de arriba abajo (sin degradado)
+		frame.BackgroundColor3 = colors[1]
+		for k = 2, #colors do
+			local band = Comic.frame(frame, colors[k])
+			band.Position = UDim2.fromScale(0, (k - 1) / #colors)
+			band.Size = UDim2.fromScale(1, 1 / #colors)
+			band.ZIndex = frame.ZIndex
 		end
-		if count == 1 then
-			table.insert(keys, ColorSequenceKeypoint.new(1, colors[1]))
-		end
-		local paint = Instance.new("UIGradient")
-		paint.Rotation = 90
-		paint.Color = ColorSequence.new(keys)
-		paint.Parent = frame
 	else
 		frame.BackgroundColor3 = Comic.Paper
 	end
@@ -710,15 +713,14 @@ local function buildTrails(y: number): number
 	return y + rows * rowH
 end
 
--- Botes de pintura a los pies de la peana
-local function buildPots()
-	potsRow:ClearAllChildren()
+-- Botes de pintura a los pies de la peana (o, en el móvil, en el estante a la altura y)
+local function buildPots(parent: Instance, y: number, width: number)
 	local list = shown("skin")
-	local slot = STAGE_W / math.max(#list, 1)
+	local slot = width / math.max(#list, 1)
 	for i, def in list do
-		local holder = Comic.frame(potsRow)
+		local holder = Comic.frame(parent)
 		holder.AnchorPoint = Vector2.new(0.5, 0)
-		at(holder, slot * (i - 0.5), 0, slot, POTS_H)
+		at(holder, slot * (i - 0.5), y, slot, POTS_H)
 		holder.ZIndex = 3
 		local cx = slot / 2
 		local glow = halo(holder, slot - 2, 56, 8)
@@ -750,8 +752,17 @@ local function buildDisplays()
 	y = buildOutfits(y)
 	y = buildHats(y + 14)
 	y = buildTrails(y + 14)
+	potsRow:ClearAllChildren()
+	potsInRack = phoneLayout
+	if potsInRack then
+		-- En el móvil la peana usa todo el alto: los botes son un expositor más (sin estirarse)
+		sign(rack, "Colores", 6, y + 14, -2)
+		buildPots(rack, y + 64, math.min(RACK_W, 72 * #shown("skin")))
+		y += 64 + POTS_H
+	else
+		buildPots(potsRow, 0, STAGE_W)
+	end
 	rack.CanvasSize = UDim2.fromOffset(0, y + 20)
-	buildPots()
 end
 
 -------------------------------------------------------------------------------
@@ -959,8 +970,8 @@ local function paint()
 end
 
 local function scrollToView(view)
-	if view.kind == "skin" then
-		return
+	if view.holder.Parent ~= rack then
+		return -- los botes a los pies de la peana no están en el estante
 	end
 	local y = view.holder.AbsolutePosition.Y - rack.AbsolutePosition.Y
 	local h = rack.AbsoluteWindowSize.Y
@@ -1104,18 +1115,33 @@ end
 
 local stageParts = {} :: any
 
--- En pantallas bajas (móvil apaisado) el mostrador se aprieta para que la peana siga viéndose
-local function layoutStage(compact: boolean)
+-- En pantallas bajas el mostrador se aprieta para que la peana siga viéndose. En el móvil, además,
+-- la peana ocupa todo el alto: el mostrador baja al pie del estante y los botes suben al estante.
+local function layoutStage(compact: boolean, phone: boolean)
 	local p = stageParts
 	if not p.back then
 		return
 	end
 	local actionH = if compact then 126 else ACTION_H
+	phoneLayout = phone
+	-- La ficha de la prenda sigue bajo la peana: en el estante le quitaba casi todo el alto a la ropa.
+	-- En celular la peana gana sitio porque los botes de pintura pasan al estante.
 	p.back.Size = UDim2.new(1, 0, 1, -actionH - 6)
+	p.counter.Parent = stageCol
+	p.counter.AnchorPoint = Vector2.new(0, 1)
+	p.counter.Position = UDim2.fromScale(0, 1)
 	p.counter.Size = UDim2.new(1, 0, 0, actionH)
+	rack.Size = UDim2.new(1, 0, 1, -FILTER_H)
+	viewport.Size = UDim2.new(1, 0, 1, if phone then 0 else -POTS_H)
+	swoosh.Position = UDim2.new(0.5, 0, 1, (if phone then 0 else -POTS_H) - 50)
+	potsRow.Visible = not phone
 	p.status.Visible = not compact
 	p.holder.Position = UDim2.fromOffset(0, if compact then 34 else 62)
 	p.set.Position = UDim2.fromOffset(0, if compact then 94 else 128)
+	if isOpen and potsInRack ~= phone then
+		buildDisplays()
+		paint()
+	end
 end
 
 local function resize()
@@ -1131,9 +1157,12 @@ local function resize()
 		s = math.max(widest, 0.01)
 		fit.Scale = s
 	end
-	local height = math.min(H, (view.Y - MARGIN * 2) / s)
+	-- Nunca bajo la barra de Roblox (ahí quedaba la X): solo se baja si centrado no cabe (en PC no cambia)
+	local inset = GuiService:GetGuiInset()
+	local height = math.min(H, (view.Y - inset.Y - MARGIN * 2) / s)
 	panel.Size = UDim2.fromOffset(W, height)
-	layoutStage(height < 600)
+	panel.Position = UDim2.new(1, -MARGIN - 8, 0.5, math.max(0, inset.Y + MARGIN - (view.Y - height * s) / 2))
+	layoutStage(height < 600, Hud.compact())
 end
 
 -- Una cortina con sus pliegues: tapa media cara del probador
@@ -1180,14 +1209,6 @@ local function buildStage()
 	swoosh.Visible = false
 	Comic.round(swoosh)
 	Comic.ink(swoosh, 3, true)
-	-- Sus colores y, en el mismo gradiente, que se desvanezca hacia la cola
-	swooshPaint = Instance.new("UIGradient")
-	swooshPaint.Parent = swoosh
-	swooshPaint.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.9),
-		NumberSequenceKeypoint.new(0.6, 0.1),
-		NumberSequenceKeypoint.new(1, 0),
-	})
 
 	viewport = Instance.new("ViewportFrame")
 	viewport.BackgroundTransparency = 1
@@ -1241,7 +1262,7 @@ local function buildStage()
 	revert = button(back)
 	revert.AnchorPoint = Vector2.new(0, 0)
 	revert.Position = UDim2.fromOffset(10, 10)
-	revert.Size = UDim2.fromOffset(150, 30)
+	revert.Size = UDim2.fromOffset(150, if Hud.compact() then TAP else 30) -- en el móvil, a tamaño de dedo
 	revert.BackgroundTransparency = 0
 	revert.BackgroundColor3 = CARD
 	revert.Rotation = -3
@@ -1449,7 +1470,7 @@ local function build()
 	foodPad.PaddingRight = UDim.new(0, 10)
 	foodPad.Parent = foodTag
 
-	local closeHolder, closeFace = Comic.button(face, UDim2.fromOffset(42, 42), Comic.Paper, 4)
+	local closeHolder, closeFace = Comic.button(face, UDim2.fromOffset(TAP, TAP), Comic.Paper, 4)
 	closeHolder.AnchorPoint = Vector2.new(1, 0)
 	closeHolder.Position = UDim2.new(1, -10, 0, 2)
 	closeHolder.ZIndex = 57

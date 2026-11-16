@@ -1592,8 +1592,40 @@ local function buildPanel()
 	holder.AnchorPoint = Vector2.new(1, 0.5)
 	holder.Position = UDim2.new(1, -16, 0.5, 0)
 	holder.Rotation = 1
-	Comic.autoScale(holder)
+	-- En táctil no encoge por debajo de 44 px lo que se pulsa (X y zonas de toque de 44)
+	local fit = Comic.autoScale(holder, nil, 44)
 	Comic.halftone(face, Comic.DirtLight, 90)
+
+	-- Celular: así puede no caber en alto; el mapa y lo de abajo van en una lista que se desplaza.
+	-- Solo en celular: el jardín asoma por encima del mapa y en PC no debe recortarse.
+	local area: GuiObject = face
+	local top = 36
+	if Hud.compact() then
+		local list = Instance.new("ScrollingFrame")
+		list.BackgroundTransparency = 1
+		list.BorderSizePixel = 0
+		list.Position = UDim2.fromOffset(0, top)
+		list.Size = UDim2.new(1, 0, 1, -top)
+		list.CanvasSize = UDim2.fromOffset(0, MAP_H + 92)
+		list.ScrollingDirection = Enum.ScrollingDirection.Y
+		list.ScrollBarThickness = 6
+		list.ScrollBarImageColor3 = Comic.Ink
+		list.ElasticBehavior = Enum.ElasticBehavior.Never
+		list.Parent = face
+		area = list
+		top = 0
+		local function fitHeight()
+			local camera = Workspace.CurrentCamera
+			if camera then
+				-- Esta pantalla ya queda bajo la barra de Roblox: el alto útil es el visor menos ella
+				local room = camera.ViewportSize.Y - Comic.topInset() - 16
+				holder.Size = UDim2.fromOffset(MAP_W + 24, math.min(MAP_H + 128, room / fit.Scale))
+			end
+		end
+		fitHeight()
+		fit:GetPropertyChangedSignal("Scale"):Connect(fitHeight)
+		Workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(fitHeight)
+	end
 
 	local title = Comic.label(face, "VECINAS", Comic.Display, 30, Comic.Red)
 	title.Size = UDim2.fromOffset(200, 34)
@@ -1612,17 +1644,18 @@ local function buildPanel()
 	closeButton.TextSize = 28
 	closeButton.TextColor3 = Comic.Ink
 	closeButton.BackgroundTransparency = 1
-	closeButton.Size = UDim2.fromOffset(32, 32)
-	closeButton.Position = UDim2.new(1, -34, 0, 2)
+	-- Caja de 44 con el mismo centro que la de 32: la × se ve igual y se acierta con el dedo
+	closeButton.Size = UDim2.fromOffset(44, 44)
+	closeButton.Position = UDim2.new(1, -40, 0, -4)
 	closeButton.Parent = face
 	closeButton.MouseButton1Click:Connect(function()
 		Social.toggle()
 	end)
 
 	-- El mapa: el jardín redondo arriba, el camino hacia las zonas y los hormigueros en arco
-	local map = Comic.frame(face)
+	local map = Comic.frame(area)
 	map.Size = UDim2.fromOffset(MAP_W, MAP_H)
-	map.Position = UDim2.fromOffset(12, 36)
+	map.Position = UDim2.fromOffset(12, top)
 	map.ClipsDescendants = false
 	local garden = Comic.frame(map, Comic.Green)
 	garden.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -1642,9 +1675,9 @@ local function buildPanel()
 	roadText.Position = mapPoint(Vector3.zero) - UDim2.fromOffset(0, 40)
 
 	-- Acción del hormiguero tocado
-	actionChip = Comic.frame(face, Comic.Yellow)
+	actionChip = Comic.frame(area, Comic.Yellow)
 	actionChip.Size = UDim2.fromOffset(MAP_W - 20, 32)
-	actionChip.Position = UDim2.fromOffset(22, 36 + MAP_H - 6)
+	actionChip.Position = UDim2.fromOffset(22, top + MAP_H - 6)
 	actionChip.Visible = false
 	Comic.round(actionChip, 8)
 	Comic.ink(actionChip, 2.5, true)
@@ -1657,7 +1690,7 @@ local function buildPanel()
 	markHolder.Position = UDim2.new(1, -140, 0, 3)
 	local markLabel = Comic.label(markFace, "Marcar camino", Comic.Display, 17, Comic.Ink)
 	markLabel.Size = UDim2.fromScale(1, 1)
-	markFace.MouseButton1Click:Connect(function()
+	local function mark()
 		local hill = panel.selected
 		if not hill then
 			return
@@ -1670,11 +1703,13 @@ local function buildPanel()
 			markLabel.Text = "Quitar flecha"
 			Sfx.pop(1.3)
 		end
-	end)
+	end
+	markFace.MouseButton1Click:Connect(mark)
+	Comic.touchPad(markHolder, markFace, 44, mark) -- se ve de 24: el dedo necesita 44
 	panel.markLabel = markLabel
 
 	-- Abajo: modo pacífico y marcador de la sesión
-	local bottom = Comic.frame(face)
+	local bottom = Comic.frame(area)
 	bottom.Size = UDim2.new(1, -24, 0, 70)
 	bottom.Position = UDim2.new(0, 12, 1, -78)
 	local peaceHolder, peaceFace = Comic.button(bottom, UDim2.fromOffset(184, 34), Comic.DirtLight, 3)
@@ -1687,10 +1722,12 @@ local function buildPanel()
 	peaceButton = peaceFace
 	peaceText = Comic.label(peaceFace, "", Comic.Display, 18, Comic.Ink)
 	peaceText.Size = UDim2.fromScale(1, 1)
-	peaceFace.MouseButton1Click:Connect(function()
+	local function togglePeace()
 		remote:FireServer("Peace", not peace)
 		Sfx.pop(1.1)
-	end)
+	end
+	peaceFace.MouseButton1Click:Connect(togglePeace)
+	Comic.touchPad(peaceHolder, peaceFace, 44, togglePeace) -- se ve de 34: el dedo necesita 44
 	local peaceHelp = Comic.label(bottom, "Ni asaltas ni te asaltan; tu despensa se llena a la mitad", Comic.Body, 12, Comic.DirtDark)
 	peaceHelp.Size = UDim2.new(1, -196, 0, 34)
 	peaceHelp.Position = UDim2.fromOffset(196, 0)

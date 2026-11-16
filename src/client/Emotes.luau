@@ -2538,6 +2538,7 @@ local function buildTouchButton()
 	gui.DisplayOrder = 5
 	gui.Parent = playerGui
 	local holder = Comic.frame(gui)
+	holder.Name = "Holder" -- en celular lo recoloca Abilities, junto a la rejilla de habilidades
 	holder.AnchorPoint = Vector2.new(1, 1)
 	holder.Position = UDim2.new(1, -24, 1, -200)
 	holder.Size = UDim2.fromOffset(64, 64)

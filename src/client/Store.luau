@@ -13,6 +13,7 @@
 -- Store.open(section?) abre el puesto (en un estante concreto si se pide) y Store.focus(id) abre
 -- la ficha de un artículo y lo señala.
 
+local GuiService = game:GetService("GuiService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -1268,6 +1269,7 @@ local function resize()
 		return
 	end
 	local view = cam.ViewportSize
+	local inset = GuiService:GetGuiInset()
 	local s = math.max(fit.Scale, 0.01)
 	local room = view.X - MARGIN * 2
 	local wantCompact = TOTAL_W * s > room
@@ -1276,7 +1278,10 @@ local function resize()
 		s = math.max(widest, 0.01)
 		fit.Scale = s
 	end
-	panel.Size = UDim2.fromOffset(if wantCompact then STALL_W else TOTAL_W, math.min(H, (view.Y - MARGIN * 2) / s))
+	local height = math.min(H, (view.Y - inset.Y - MARGIN * 2) / s)
+	panel.Size = UDim2.fromOffset(if wantCompact then STALL_W else TOTAL_W, height)
+	-- La X y "Volver" no pueden quedar bajo la barra de Roblox: solo se baja si centrado no cabe (en PC no cambia)
+	panel.Position = UDim2.new(0.5, 0, 0.5, math.max(0, inset.Y + MARGIN - (view.Y - height * s) / 2))
 	if wantCompact ~= compact then
 		compact = wantCompact
 	end
@@ -1371,7 +1376,7 @@ local function buildSheet()
 
 	-- En pantallas estrechas la ficha tapa el puesto: "Volver" la quita
 	local back = button(paper)
-	at(back, 12, 12, 96, 34)
+	at(back, 12, 12, 110, TAP) -- TAP: con Hud.fitScale mide 44 px reales en táctil
 	back.BackgroundTransparency = 0
 	back.BackgroundColor3 = CARD
 	back.Rotation = -3
@@ -1508,7 +1513,7 @@ local function buildStall()
 	signText.ZIndex = 14
 
 	-- Cerrar: chapa redonda sobre el toldo
-	local closeHolder, closeFace = Comic.button(face, UDim2.fromOffset(46, 46), Comic.Paper, 4)
+	local closeHolder, closeFace = Comic.button(face, UDim2.fromOffset(TAP, TAP), Comic.Paper, 4)
 	closeHolder.AnchorPoint = Vector2.new(1, 0)
 	closeHolder.Position = UDim2.new(1, -POST - 8, 0, 14)
 	closeHolder.ZIndex = 12

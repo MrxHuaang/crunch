@@ -1,8 +1,10 @@
 -- Piezas base del estilo: tinta, colores de imprenta, cajas con sombra dura, estallidos,
 -- trama de puntos y "hervor de línea" (el temblor del dibujo hecho a mano).
 
+local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Assets = require(ReplicatedStorage.Shared.Assets)
@@ -43,14 +45,27 @@ function Comic.round(parent: GuiObject, radius: number?)
 	return corner
 end
 
--- Mantiene un widget diseñado en píxeles legible en cualquier pantalla.
-function Comic.autoScale(widget: GuiObject, reference: number?): UIScale
+-- Escala mínima para que, en táctil, lo más pequeño que se pulsa (`tap`, en diseño) mida 44 px
+-- reales; 0 sin táctil. Igual que Hud.fitScale, pero aquí: Hud requiere Comic y no al revés.
+function Comic.tapScale(tap: number?): number
+	return if tap and UserInputService.TouchEnabled then 44 / tap else 0
+end
+
+-- Alto de la barra de Roblox en táctil (ahí una X queda bajo sus botones); 0 en PC, como antes.
+function Comic.topInset(): number
+	return if UserInputService.TouchEnabled then GuiService:GetGuiInset().Y else 0
+end
+
+-- Mantiene un widget diseñado en píxeles legible en cualquier pantalla. Con `tap`, en táctil
+-- nunca encoge lo que se pulsa por debajo de 44 px (si así no cabe, el panel se desplaza).
+function Comic.autoScale(widget: GuiObject, reference: number?, tap: number?): UIScale
 	local scale = Instance.new("UIScale")
 	scale.Parent = widget
 	local function update()
 		local camera = Workspace.CurrentCamera
 		if camera then
-			scale.Scale = math.clamp(camera.ViewportSize.Y / (reference or 900), 0.55, 1.5)
+			local value = math.clamp(camera.ViewportSize.Y / (reference or 900), 0.55, 1.5)
+			scale.Scale = math.max(value, Comic.tapScale(tap))
 		end
 	end
 	update()
@@ -171,6 +186,24 @@ function Comic.button(parent: Instance, size: UDim2, color: Color3, shadowOffset
 	face.MouseLeave:Connect(release)
 
 	return holder, face
+end
+
+-- Zona de toque invisible para un botón bajito: en táctil lo alarga a `height` de diseño
+-- (centrado) sin cambiar cómo se ve. Va encima de la cara, así que llama a `onTap` por ella.
+function Comic.touchPad(holder: GuiObject, face: GuiObject, height: number, onTap: () -> ())
+	if not UserInputService.TouchEnabled then
+		return
+	end
+	local pad = Instance.new("TextButton")
+	pad.Name = "TouchPad"
+	pad.Text = ""
+	pad.BackgroundTransparency = 1
+	pad.AnchorPoint = Vector2.new(0.5, 0.5)
+	pad.Position = UDim2.fromScale(0.5, 0.5)
+	pad.Size = UDim2.new(1, 0, 0, height)
+	pad.ZIndex = face.ZIndex + 1
+	pad.Parent = holder
+	pad.Activated:Connect(onTap)
 end
 
 function Comic.punch(scale: UIScale, from: number)

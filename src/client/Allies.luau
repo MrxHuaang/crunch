@@ -44,18 +44,22 @@ local NEAR = 220 -- efectos que solo se ven si pasan cerca
 local SNAP = 60 -- más lejos que esto de su sitio, aparecen directamente allí
 local BEE_SCALE = 1.5
 local BEETLE_SCALE = 2
--- El escarabajo iba justo detrás (0, 0, 7,2): en la línea de la cámara, que lo tenía encima y tapaba
--- media pantalla. Ahora va a la derecha y algo detrás, con hueco según su tamaño y el de la hormiga.
-local BEETLE_GAP = Vector3.new(1.6, 0, 1.2) -- aire entre la hormiga y el escarabajo (lado, detrás)
+-- El escarabajo iba detrás, en la línea de la cámara, y tapaba media pantalla. Ahora va a la
+-- derecha, a la altura de la hormiga, con hueco según su tamaño y el de ella.
+local BEETLE_GAP = 1.6 -- aire entre la hormiga y el escarabajo, por escala de la hormiga
 local BEETLE_MAX = 1.3 -- nunca más largo que 1,3 veces la hormiga
 local BEETLE_FADE = 0.65 -- transparencia si aun así se mete entre la cámara y tu hormiga
+-- Escolta a los lados y delante (nada justo detrás, donde va la cámara); a la derecha deja sitio
+-- al escarabajo. Se multiplican por la escala de la hormiga.
 local ESCORT_SLOTS = {
 	Vector3.new(-3.4, 0, -0.6),
-	Vector3.new(3.4, 0, -0.6),
-	Vector3.new(-4.6, 0, 2.4),
-	Vector3.new(4.6, 0, 2.4),
-	Vector3.new(-1.8, 0, 9),
+	Vector3.new(2.6, 0, -4.4),
+	Vector3.new(-4.4, 0, 2.6),
+	Vector3.new(-2.6, 0, -4.2),
+	Vector3.new(-6.6, 0, 0),
 }
+local ESCORT_RADIUS = 2 -- hueco que deja cada soldado a la línea cámara-hormiga
+local BEE_RADIUS = 2.5
 local ESCORT_FAN = { -0.55, 0.55, -1.1, 1.1, 0 } -- alrededor de la comida, en radianes desde tu lado
 local MAX_ESCORTS = #ESCORT_SLOTS
 
@@ -482,10 +486,49 @@ local function mouthOf(character: Model, root: BasePart, scale: number): Vector3
 	return root.Position + root.CFrame.LookVector * (1.6 * scale) + Vector3.new(0, 0.3 * scale, 0)
 end
 
+-- ¿Está `point` (con radio `radius`) entre la cámara y tu hormiga? Devuelve el punto más cercano
+-- de esa línea si lo está.
+local function blocking(point: Vector3, radius: number): Vector3?
+	local target = focus
+	if not target then
+		return nil
+	end
+	local line = target - camNow
+	local len2 = line:Dot(line)
+	if len2 < 1 then
+		return nil
+	end
+	local t = (point - camNow):Dot(line) / len2
+	if t <= 0 or t >= 1 then
+		return nil
+	end
+	local closest = camNow + line * t
+	return if (point - closest).Magnitude < radius then closest else nil
+end
+
+-- Si el sitio `goal` de una aliada tuya (con su centro `lift` más arriba) cae entre la cámara y tu
+-- hormiga, lo corre de lado, en perpendicular a esa línea, lo justo para dejar `radius` de hueco.
+local function aside(goal: Vector3, lift: number, radius: number, owner): Vector3
+	if not owner.mine or not focus or not blocking(goal + Vector3.new(0, lift, 0), radius) then
+		return goal
+	end
+	local line = (focus - camNow) * Vector3.new(1, 0, 1)
+	if line.Magnitude < 0.05 then
+		return goal -- cámara justo encima: no hay lado
+	end
+	local side = Vector3.new(-line.Z, 0, line.X).Unit
+	local off = (goal - focus):Dot(side)
+	if off < 0 or (off < 0.05 and side:Dot(owner.turn.RightVector) < 0) then
+		side, off = -side, -off
+	end
+	return goal + side * math.max(radius - off, 0)
+end
+
 local function updateBee(rig, owner, now: number, dt: number)
 	local bee = rig.bee
 	local scale = owner.scale
-	local idle = owner.root.Position + owner.turn:VectorToWorldSpace(Vector3.new(2.6, 3.4, 1.2) * scale)
+	-- A la derecha, algo por encima y delante (antes iba detrás, en la línea de la cámara)
+	local idle = aside(owner.root.Position + owner.turn:VectorToWorldSpace(Vector3.new(2.6, 3, -1.2) * scale), 0, BEE_RADIUS * scale, owner)
 		+ Vector3.new(0, math.sin(now * 2.6 + owner.phase) * 0.35, 0)
 	local pos = bee.pos or idle
 	if (pos - idle).Magnitude > SNAP and not bee.trip then
@@ -545,26 +588,6 @@ local function updateBee(rig, owner, now: number, dt: number)
 	end
 end
 
--- ¿Está `point` (con radio `radius`) entre la cámara y tu hormiga? Devuelve el punto más cercano
--- de esa línea si lo está.
-local function blocking(point: Vector3, radius: number): Vector3?
-	local target = focus
-	if not target then
-		return nil
-	end
-	local line = target - camNow
-	local len2 = line:Dot(line)
-	if len2 < 1 then
-		return nil
-	end
-	local t = (point - camNow):Dot(line) / len2
-	if t <= 0 or t >= 1 then
-		return nil
-	end
-	local closest = camNow + line * t
-	return if (point - closest).Magnitude < radius then closest else nil
-end
-
 local function updateBeetle(rig, owner, target: Player, now: number, dt: number)
 	local beetle = rig.beetle
 	local k = beetle.kit
@@ -585,23 +608,11 @@ local function updateBeetle(rig, owner, target: Player, now: number, dt: number)
 		resize(k, math.clamp(BEETLE_MAX * antLen / k.length, 0.25, 1))
 	end
 	local length, width = k.length * k.factor, k.width * k.factor
-	-- Sitio: a la derecha de la hormiga y algo detrás (no en la línea de la cámara)
-	local slot = Vector3.new(antWidth / 2 + width / 2 + BEETLE_GAP.X, 0, antLen / 2 + length / 2 + BEETLE_GAP.Z)
-	local goal = owner.ground + owner.turn:VectorToWorldSpace(slot)
-	-- Si aun así su sitio queda entre la cámara y tu hormiga, se aparta hacia un lado
+	-- Sitio: a la derecha de la hormiga, a su altura (no en la línea de la cámara)
+	local slot = Vector3.new(antWidth / 2 + width / 2 + BEETLE_GAP * owner.scale, 0, 0)
+	-- Si aun así su sitio queda entre la cámara y tu hormiga (cámara girada), se aparta hacia un lado
 	local radius = math.max(length, width) * 0.5
-	if target == player then
-		local closest = blocking(goal + Vector3.new(0, k.height, 0), radius + 1.5)
-		if closest then
-			local away = goal - closest
-			away = Vector3.new(away.X, 0, away.Z)
-			if away.Magnitude < 0.05 then
-				away = owner.turn:VectorToWorldSpace(Vector3.xAxis)
-			end
-			local push = closest + away.Unit * (radius + 1.5)
-			goal = Vector3.new(push.X, owner.ground.Y, push.Z)
-		end
-	end
+	local goal = aside(owner.ground + owner.turn:VectorToWorldSpace(slot), k.height, radius + 1.5, owner)
 	local pos = beetle.pos
 	if not pos or (pos - goal).Magnitude > SNAP then
 		pos = goal
@@ -680,7 +691,7 @@ local function updateEscorts(rig, owner, count: number, now: number, dt: number)
 				lunge = math.sin(k * math.pi)
 			end
 		else
-			goal = owner.ground + owner.turn:VectorToWorldSpace(ESCORT_SLOTS[i] * owner.scale)
+			goal = aside(owner.ground + owner.turn:VectorToWorldSpace(ESCORT_SLOTS[i] * owner.scale), escort.kit.height, ESCORT_RADIUS * owner.scale, owner)
 		end
 		local pos = escort.pos
 		if not pos or (pos - goal).Magnitude > SNAP then
@@ -834,6 +845,7 @@ local function step(rawDt: number)
 			turn = CFrame.Angles(0, yaw, 0),
 			ground = Vector3.new(root.Position.X, groundY, root.Position.Z),
 			phase = rig.phase,
+			mine = target == player, -- solo las tuyas se apartan de tu cámara
 		}
 
 		if rig.bee then
