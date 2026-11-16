@@ -204,13 +204,35 @@ local function onPlayerAdded(player: Player)
 		return
 	end
 
-	local profile = Profiles.create(player, data, canSave)
-	profile.hill = assignAnthill(player)
-	Monetize.load(profile)
+	-- Sin hormiguero libre no se puede entregar ni aparecer: mejor avisar que entrar rota
+	local hill = assignAnthill(player)
+	if not hill then
+		if canSave then
+			Data.release(player.UserId)
+		end
+		player:Kick("Este servidor está lleno. Prueba en otro.")
+		return
+	end
+
+	-- Si el perfil no se puede montar (datos guardados raros), que no se quede el hormiguero ocupado
+	local created, result = pcall(Profiles.create, player, data, canSave)
+	if not created then
+		warn("[CRUNCH!] No se pudo crear el perfil de", player.UserId, result)
+		Profiles.remove(player)
+		releaseAnthill(hill)
+		if canSave then
+			Data.release(player.UserId)
+		end
+		player:Kick("No pudimos cargar tu colonia. Vuelve a entrar en un par de minutos.")
+		return
+	end
+	local profile = result
+	profile.hill = hill
+	Monetize.load(profile) -- marca los pases y recalcula las estadísticas con ellos
 	if not player.Parent then
 		return
 	end
-	grantOffline(profile)
+	grantOffline(profile) -- ya con las horas y la eficiencia de los pases (Despensa sin fondo)
 	Profiles.refresh(profile)
 	player:SetAttribute("Loaded", true)
 
@@ -427,36 +449,47 @@ function PlayerService.deliver(profile, carry: number, carryValue: number): numb
 	return credited
 end
 
+local function tryDeposit(player: Player, profile)
+	if profile.carry <= 0 or not profile.hill then
+		return
+	end
+	local root = getRoot(player)
+	if not root then
+		return
+	end
+	local stats = profile.stats
+	local center = profile.hill:GetPivot().Position
+	local flat = (center - root.Position) * Vector3.new(1, 0, 1)
+	-- En casa o en el hormiguero de una zona abierta (Depots): la misma entrega
+	local top: Vector3? = nil
+	if flat.Magnitude <= Config.Anthill.DepositRadius * stats.hillScale then
+		top = center + Vector3.new(0, 9 * stats.hillScale, 0)
+	else
+		local zone = Depots.near(profile, root.Position)
+		top = zone and Depots.top(zone)
+	end
+	if top and canReach(profile, root.Position) then
+		PlayerService.moved(profile, root.Position)
+		local credited, _, doubled = PlayerService.credit(profile, profile.carry, profile.carryValue)
+		profile.carry = 0
+		profile.carryValue = 0
+		Profiles.push(profile)
+		updateCarryVisual(profile)
+		fxRemote:FireClient(player, "Deposit", top, credited, doubled)
+	end
+end
+
 local function depositLoop()
+	local lastErr, lastAt = nil, 0
 	while true do
 		task.wait(0.1)
 		for player, profile in Profiles.all() do
-			if profile.carry <= 0 or not profile.hill then
-				continue
-			end
-			local root = getRoot(player)
-			if not root then
-				continue
-			end
-			local stats = profile.stats
-			local center = profile.hill:GetPivot().Position
-			local flat = (center - root.Position) * Vector3.new(1, 0, 1)
-			-- En casa o en el hormiguero de una zona abierta (Depots): la misma entrega
-			local top: Vector3? = nil
-			if flat.Magnitude <= Config.Anthill.DepositRadius * stats.hillScale then
-				top = center + Vector3.new(0, 9 * stats.hillScale, 0)
-			else
-				local zone = Depots.near(profile, root.Position)
-				top = zone and Depots.top(zone)
-			end
-			if top and canReach(profile, root.Position) then
-				PlayerService.moved(profile, root.Position)
-				local credited, _, doubled = PlayerService.credit(profile, profile.carry, profile.carryValue)
-				profile.carry = 0
-				profile.carryValue = 0
-				Profiles.push(profile)
-				updateCarryVisual(profile)
-				fxRemote:FireClient(player, "Deposit", top, credited, doubled)
+			-- Un fallo con una jugadora no deja a nadie más sin entregar
+			local ok, err = pcall(tryDeposit, player, profile)
+			-- El mismo error, como mucho cada 10 s: este bucle va 10 veces por segundo
+			if not ok and (err ~= lastErr or os.clock() - lastAt > 10) then
+				lastErr, lastAt = err, os.clock()
+				warn("[CRUNCH!] Entrega:", err)
 			end
 		end
 	end

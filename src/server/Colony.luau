@@ -466,7 +466,10 @@ local function onFrenzy(player: Player)
 	if now < profile.frenzyReadyAt then
 		return
 	end
-	profile.frenzyUntil = now + profile.stats.frenzyDuration
+	-- Si hay un frenesí pagado en marcha, el gratis va detrás y no lo corta. Sobre otro gratis no se
+	-- apila: con la duración por encima de la recarga se acumularían minutos
+	local base = math.max(profile.paidFrenzyUntil or 0, now)
+	profile.frenzyUntil = math.max(profile.frenzyUntil, base + profile.stats.frenzyDuration)
 	profile.frenzyReadyAt = now + profile.stats.frenzyCooldown
 	Profiles.push(profile)
 	fxRemote:FireClient(player, "Frenzy")
@@ -485,13 +488,19 @@ function Colony.start(remotes: Folder)
 
 	task.spawn(function()
 		local last = os.clock()
+		local lastErr, lastAt = nil, 0
 		while true do
 			task.wait(TICK)
 			local now = os.clock()
 			local dt = now - last
 			last = now
 			for _, profile in Profiles.all() do
-				tick(profile, dt)
+				-- Un fallo con una jugadora no para la colonia de las demás ni apaga el bucle
+				local ok, err = pcall(tick, profile, dt)
+				if not ok and (err ~= lastErr or now - lastAt > 10) then
+					lastErr, lastAt = err, now
+					warn("[CRUNCH!] Colonia:", err)
+				end
 			end
 		end
 	end)

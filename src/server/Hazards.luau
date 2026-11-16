@@ -244,6 +244,7 @@ end
 
 local function creatureLoop()
 	local last = os.clock()
+	local lastErr, lastAt = nil, 0
 	while true do
 		task.wait(TICK)
 		local now = os.clock()
@@ -251,7 +252,11 @@ local function creatureLoop()
 		last = now
 		local packet = {}
 		for _, creature in creatures do
-			updateCreature(creature, dt, now)
+			local ok, err = pcall(updateCreature, creature, dt, now)
+			if not ok and (err ~= lastErr or now - lastAt > 10) then
+				lastErr, lastAt = err, now
+				warn("[CRUNCH!] Peligros:", err)
+			end
 			table.insert(packet, {
 				creature.id,
 				creature.kind,

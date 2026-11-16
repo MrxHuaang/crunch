@@ -916,15 +916,20 @@ function Orders.start(remotes: Folder)
 				end
 			end
 			for _, profile in Profiles.all() do
-				local st = stateOf(profile)
-				if beat % 4 == 0 then
-					checkUnlocks(profile)
-				end
-				if st.watching and clock - st.estimateAt >= O.EstimateEvery then
-					st.estimateAt = clock
-					send(profile, true)
-				elseif beat % 4 == 0 and stateKey(profile) ~= st.sentKey then
-					send(profile, false)
+				local ok, err = pcall(function()
+					local st = stateOf(profile)
+					if beat % 4 == 0 then
+						checkUnlocks(profile)
+					end
+					if st.watching and clock - st.estimateAt >= O.EstimateEvery then
+						st.estimateAt = clock
+						send(profile, true)
+					elseif beat % 4 == 0 and stateKey(profile) ~= st.sentKey then
+						send(profile, false)
+					end
+				end)
+				if not ok then
+					warn("[CRUNCH!] Órdenes:", err)
 				end
 			end
 		end

@@ -795,7 +795,11 @@ function Quests.start(remotes: Folder)
 			else
 				local rt = runtime[profile]
 				if rt.dirty and clock - rt.sent >= SEND_GAP then
-					sendProgress(profile)
+					local ok, err = pcall(sendProgress, profile)
+					if not ok then
+						rt.dirty = false -- que un fallo no se repita en cada vuelta
+						warn("[CRUNCH!] Misiones:", err)
+					end
 				end
 			end
 		end

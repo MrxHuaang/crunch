@@ -322,7 +322,8 @@ local function onRequest(player: Player, action: any, zoneId: any)
 	end
 
 	if action == "Go" then
-		local zone = if type(zoneId) == "number" then math.floor(zoneId) else 0
+		-- zoneId == zoneId descarta NaN, que pasaría todas las comparaciones de abajo
+		local zone = if type(zoneId) == "number" and zoneId == zoneId then math.floor(zoneId) else 0
 		if zone < 2 or zone > depth or zone > #Config.Zones or not near(root, home.spot) then
 			return
 		end

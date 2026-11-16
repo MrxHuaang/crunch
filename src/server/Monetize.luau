@@ -7,8 +7,9 @@
 -- si quedó guardada. Lo que dura un rato (pociones, velocidad, imán, llave) se guarda como segundos
 -- restantes en data.paid y vuelve al entrar; el reloj se para mientras no juegas.
 --
--- Guardado: data.paid = { food, speed, magnet, key = segundos que quedan; keyDepth = zona que abre
--- la llave; jellyBoost, halfDig = cuántos quedan por usar; starter = ya se entregó el paquete }.
+-- Guardado: data.paid = { food, speed, magnet, key, frenzy = segundos que quedan; keyDepth = zona que abre
+-- la llave; jellyBoost, halfDig = cuántos quedan por usar; eggs = huevos dorados pagados sin recoger
+-- (los pone Nest); starter = ya se entregó el paquete }.
 -- Atributos de la jugadora: P_<pase>, PaidFoodUntil, SpeedUntil, MagnetUntil, KeyUntil, KeyDepth
 -- (horas del servidor), JellyBoost, HalfDig. Workspace: FeastUntil/FeastBy, GoldRainUntil/GoldRainBy.
 
@@ -82,7 +83,7 @@ local function paidOf(data)
 		data.paid = {}
 	end
 	local paid = data.paid
-	for _, key in { "food", "speed", "magnet", "key", "keyDepth", "jellyBoost", "halfDig" } do
+	for _, key in { "food", "speed", "magnet", "key", "keyDepth", "jellyBoost", "halfDig", "eggs", "frenzy" } do
 		local value = paid[key]
 		paid[key] = if type(value) == "number" and value == value and value >= 0 then value else 0
 	end
@@ -97,6 +98,7 @@ local function syncPaid(profile)
 	paid.speed = math.max(0, (profile.speedUntil or 0) - t)
 	paid.magnet = math.max(0, (profile.magnetUntil or 0) - t)
 	paid.key = math.max(0, (profile.keyUntil or 0) - t)
+	paid.frenzy = math.max(0, (profile.paidFrenzyUntil or 0) - t)
 end
 
 local function announce(buyer, def, recipient, kind: string)
@@ -128,10 +130,16 @@ local function digNow(profile)
 	local data = profile.data
 	if data.depth < Stats.MaxDepth then
 		data.depth += 1
-		Profiles.say(profile, "¡Capa nueva! Se abre " .. Config.Zones[data.depth].name, 6)
-		-- Las estadísticas, al día antes de avisar: los oyentes leen la capa nueva
-		Profiles.refresh(profile)
-		Events.fire("Dig", profile, data.depth)
+		-- La capa ya está dada: si algo de lo que sigue falla, la compra no debe repetirse y excavar otra
+		local ok, err = pcall(function()
+			Profiles.say(profile, "¡Capa nueva! Se abre " .. Config.Zones[data.depth].name, 6)
+			-- Las estadísticas, al día antes de avisar: los oyentes leen la capa nueva
+			Profiles.refresh(profile)
+			Events.fire("Dig", profile, data.depth)
+		end)
+		if not ok then
+			warn("[CRUNCH!] Excavadora: capa dada, pero falló el aviso:", err)
+		end
 	else
 		-- Ya no queda nada que excavar: se devuelve en jalea
 		data.jelly += 15
@@ -283,12 +291,15 @@ local GRANTS = {
 		Profiles.say(profile, "¡Una carretilla hasta arriba de comida!", 4)
 	end,
 	frenzy = function(profile)
-		profile.frenzyUntil = math.max(profile.frenzyUntil, now()) + 60
+		local t = now()
+		profile.frenzyUntil = math.max(profile.frenzyUntil, t) + 60
+		-- Lo pagado se cuenta aparte: enjambrar no se lo come (RunReset) y se guarda al salir (syncPaid)
+		profile.paidFrenzyUntil = math.max(profile.paidFrenzyUntil or 0, t) + 60
 		Profiles.say(profile, "¡Frenesí! La colonia se ha vuelto loca", 4)
 	end,
 	egg = function(profile)
-		profile.eggAt = 0
-		profile.eggGift = true
+		-- Contador guardado: el huevo pagado no se pierde si ya había otro, si compras dos o si sales
+		paidOf(profile.data).eggs += 1
 		Profiles.say(profile, "¡Un huevo dorado te espera junto a tu hormiguero!", 5)
 	end,
 	-- Potenciadores
@@ -364,17 +375,42 @@ local function giveStarter(profile)
 	colonyTime(profile, 1800, 600)
 	addPaidFood(profile, 1800)
 	profile.data.jelly += 10
-	profile.eggAt = 0
-	profile.eggGift = true
+	paid.eggs += 1
 	Profiles.say(profile, "¡Paquete de inicio! Comida, jalea, poción y un huevo dorado", 6)
 end
 
 local function grantPass(profile, pass)
 	profile.passes[pass.id] = true
 	profile.player:SetAttribute("P_" .. pass.id, true)
-	if pass.id == "starterPack" then
-		giveStarter(profile)
+end
+
+-- Marca los pases y recalcula. El paquete de inicio va después, con las estadísticas ya al día:
+-- así su comida cuenta el VIP o la comida doble que tengas.
+local function grantPasses(profile, passes)
+	for _, pass in passes do
+		grantPass(profile, pass)
 	end
+	Profiles.refresh(profile)
+	if profile.passes.starterPack and not paidOf(profile.data).starter then
+		giveStarter(profile)
+		Profiles.refresh(profile)
+	end
+end
+
+-- ¿Tiene el pase? nil si Roblox no respondió (no es lo mismo que "no")
+local function ownsPass(userId: number, passId: number): boolean?
+	for attempt = 1, 3 do
+		local ok, result = pcall(function()
+			return MarketplaceService:UserOwnsGamePassAsync(userId, passId)
+		end)
+		if ok then
+			return result == true
+		end
+		if attempt < 3 then
+			task.wait(attempt)
+		end
+	end
+	return nil
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -448,16 +484,62 @@ function Monetize.load(profile)
 	profile.speedUntil = if paid.speed > 0 then t + paid.speed else 0
 	profile.magnetUntil = if paid.magnet > 0 then t + paid.magnet else 0
 	profile.keyUntil = if paid.key > 0 then t + paid.key else 0
+	profile.paidFrenzyUntil = if paid.frenzy > 0 then t + paid.frenzy else 0
+	profile.frenzyUntil = math.max(profile.frenzyUntil, profile.paidFrenzyUntil)
 	profile.buffUntil = math.max(profile.buffUntil, profile.paidFoodUntil)
 	applyFeast(profile)
 
+	-- Todos los pases a la vez, cada uno con sus reintentos
+	local userId = profile.player.UserId
+	local owned, unknown = {}, {}
+	local left = 0
 	for _, pass in passById do
-		local ok, owns = pcall(function()
-			return MarketplaceService:UserOwnsGamePassAsync(profile.player.UserId, pass.passId)
+		left += 1
+		task.spawn(function()
+			local has = ownsPass(userId, pass.passId)
+			if has then
+				table.insert(owned, pass)
+			elseif has == nil then
+				table.insert(unknown, pass)
+			end
+			left -= 1
 		end)
-		if ok and owns then
-			grantPass(profile, pass)
-		end
+	end
+	while left > 0 do
+		task.wait()
+	end
+	if Profiles.get(profile.player) ~= profile then
+		return -- salió mientras tanto: su hormiguero ya se soltó y no hay que volver a pintarlo
+	end
+	grantPasses(profile, owned)
+
+	-- Si Roblox no contestó, se sigue preguntando un rato: quien pagó no juega toda la sesión sin su pase
+	if #unknown > 0 then
+		warn("[CRUNCH!] No se pudo comprobar", #unknown, "pase(s) de", userId, "; se reintenta")
+		task.spawn(function()
+			for _ = 1, 10 do
+				task.wait(30)
+				if Profiles.get(profile.player) ~= profile then
+					return
+				end
+				local found = {}
+				for i = #unknown, 1, -1 do
+					local has = ownsPass(userId, unknown[i].passId)
+					if has ~= nil then
+						if has and not profile.passes[unknown[i].id] then
+							table.insert(found, unknown[i])
+						end
+						table.remove(unknown, i)
+					end
+				end
+				if #found > 0 and Profiles.get(profile.player) == profile then
+					grantPasses(profile, found)
+				end
+				if #unknown == 0 then
+					return
+				end
+			end
+		end)
 	end
 end
 
@@ -539,7 +621,7 @@ function Monetize.debugGrant(profile, id: string, target: any?)
 	end
 	local recipient = profile
 	if kind == "pass" then
-		grantPass(profile, def)
+		grantPasses(profile, { def })
 	else
 		if def.gift and target and Profiles.get(target.player) == target then
 			recipient = target
@@ -562,8 +644,7 @@ function Monetize.start()
 		local profile = Profiles.get(player)
 		local pass = passById[passId]
 		if purchased and profile and pass and not profile.passes[pass.id] then
-			grantPass(profile, pass)
-			Profiles.refresh(profile)
+			grantPasses(profile, { pass })
 			announce(profile, pass, profile, "pass")
 		end
 	end)
@@ -578,6 +659,7 @@ function Monetize.start()
 	-- Reiniciar la partida pone a cero el doble de comida: lo pagado vuelve
 	Events.on("RunReset", function(profile)
 		profile.buffUntil = math.max(profile.buffUntil, profile.paidFoodUntil or 0)
+		profile.frenzyUntil = math.max(profile.frenzyUntil, profile.paidFrenzyUntil or 0)
 		applyFeast(profile)
 		Profiles.refresh(profile)
 	end)
@@ -606,11 +688,16 @@ function Monetize.start()
 			beat += 1
 			local t = now()
 			for _, profile in Profiles.all() do
-				if profile.stats and activeKey(profile, t) ~= profile.boostKey then
-					Profiles.refresh(profile)
-				end
-				if beat % 2 == 0 then
-					syncPaid(profile)
+				local ok, err = pcall(function()
+					if profile.stats and activeKey(profile, t) ~= profile.boostKey then
+						Profiles.refresh(profile)
+					end
+					if beat % 2 == 0 then
+						syncPaid(profile)
+					end
+				end)
+				if not ok then
+					warn("[CRUNCH!] Relojes de compras:", err)
 				end
 			end
 		end

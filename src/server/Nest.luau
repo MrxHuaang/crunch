@@ -219,17 +219,26 @@ local function eggValue(profile): number
 	return math.max(colony, Config.Egg.FloorBites * stats.biteDamage * zoneFood.value) * stats.eggMult
 end
 
+-- Huevos comprados sin recoger: se guardan en data.paid.eggs (Monetize) y no caducan
+local function paidEggs(profile): number
+	local paid = profile.data.paid
+	local eggs = type(paid) == "table" and paid.eggs
+	return if type(eggs) == "number" and eggs > 0 then eggs else 0
+end
+
 local function updateEgg(nest, profile, now: number, root: BasePart?)
 	local stats = profile.stats
-	if stats.eggs <= 0 and not profile.eggGift then
-		-- Sin la mejora (p. ej. tras enjambrar) no hay huevo
+	local hasTree = stats.eggs > 0
+	if not hasTree and paidEggs(profile) == 0 then
+		-- Sin la mejora (p. ej. tras enjambrar) ni huevos pagados no hay huevo
 		if nest.egg then
 			dropEgg(nest)
 		end
 		return
 	end
 	profile.eggAt = profile.eggAt or (now + 45)
-	if not nest.egg and now >= profile.eggAt then
+	local natural = hasTree and now >= profile.eggAt
+	if not nest.egg and (natural or paidEggs(profile) > 0) then
 		nest.egg = buildEgg(nest)
 		nest.hill:SetAttribute("Egg", true)
 		Profiles.say(profile, "¡Hay un huevo dorado junto a mi hormiguero!", 5)
@@ -237,8 +246,12 @@ local function updateEgg(nest, profile, now: number, root: BasePart?)
 	if nest.egg and root and ((root.Position - nest.eggSpot) * FLAT).Magnitude < EGG_REACH then
 		local position = nest.eggSpot + Vector3.new(0, 2.5, 0)
 		dropEgg(nest)
-		profile.eggAt = now + stats.eggInterval
-		profile.eggGift = false
+		-- Primero se gasta el del árbol si ya tocaba; si no, uno pagado. Si queda otro, sale enseguida.
+		if natural then
+			profile.eggAt = now + stats.eggInterval
+		else
+			profile.data.paid.eggs = math.max(paidEggs(profile) - 1, 0)
+		end
 		local credited = Profiles.addFood(profile, eggValue(profile))
 		Profiles.push(profile)
 		fxRemote:FireClient(profile.player, "Egg", position, credited)
@@ -321,7 +334,7 @@ function Nest.start(remotes: Folder)
 		return "Necesitas la mejora " .. Config.NodeById[id].name
 	end
 	DevTools.register("egg", "Huevo dorado ya", function(profile)
-		if profile.stats.eggs <= 0 and not profile.eggGift then
+		if profile.stats.eggs <= 0 and paidEggs(profile) == 0 then
 			return needs("eggs")
 		end
 		profile.eggAt = 0

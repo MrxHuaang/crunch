@@ -214,7 +214,11 @@ function Profiles.refresh(profile)
 	end
 
 	for _, hook in Profiles.onRefresh do
-		hook(profile)
+		-- Un módulo que falla no corta la compra ni la entrada que pidieron este refresh
+		local ok, err = pcall(hook, profile)
+		if not ok then
+			warn("[CRUNCH!] Profiles.onRefresh:", err)
+		end
 	end
 end
 

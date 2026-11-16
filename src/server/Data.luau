@@ -19,6 +19,7 @@ local store = nil
 local storeFailed = false
 local pending = 0 -- guardados en curso; BindToClose espera a que lleguen a cero
 local saving = {} -- [userId] = true: los guardados de una jugadora van de uno en uno, en orden
+local queued = {} -- [userId] = guardados esperando turno (la carga los espera, ver Data.load)
 local released = {} -- [userId] = true: ya se soltó la colonia; ningún guardado tardío la vuelve a coger
 
 -- El autoguardado renueva el bloqueo cada Interval: si lleva 3 sin renovarse, su servidor cayó
@@ -93,6 +94,12 @@ function Data.load(userId: number)
 		return nil, false
 	end
 
+	-- Si salió y volvió a este mismo servidor, su guardado de salida puede seguir en marcha: hay que
+	-- esperarlo para leer lo último y para que su marca de 'soltada' no bloquee la sesión nueva
+	while saving[userId] or queued[userId] do
+		task.wait()
+	end
+
 	local deadline = os.clock() + LOCK_WAIT
 	local failures = 0
 	while true do
@@ -153,8 +160,13 @@ function Data.save(userId: number, data, release: boolean?): boolean
 		return false
 	end
 	pending += 1
+	queued[userId] = (queued[userId] or 0) + 1
 	while saving[userId] do
 		task.wait()
+	end
+	queued[userId] -= 1
+	if queued[userId] <= 0 then
+		queued[userId] = nil
 	end
 	if released[userId] then
 		-- La colonia ya se guardó y se soltó al salir: escribir ahora pisaría eso y la volvería a bloquear
@@ -173,8 +185,10 @@ function Data.save(userId: number, data, release: boolean?): boolean
 					return nil -- otro servidor la cargó después: su copia es la buena
 				end
 				-- La foto se toma aquí, al escribir, y no al llamar: cada intento lleva lo último
-				data.lastSeen = os.time()
 				local out = table.clone(data)
+				-- La hora va solo a la copia: en memoria, lastSeen sigue siendo la de la sesión anterior, que
+				-- es la que usan el progreso sin conexión y el Despertador aunque un autoguardado llegue antes
+				out.lastSeen = os.time()
 				out.lock = if release then nil else ownLock()
 				return out
 			end)

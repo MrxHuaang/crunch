@@ -980,6 +980,71 @@ local function onRequest(player: Player, action: any, arg: any)
 	end
 end
 
+-- Una vuelta del bucle social. Va aparte para protegerla: un fallo no apaga Vecinas para siempre
+local function step(t: number, dt: number, ticks: number)
+	-- Altas y bajas (sin depender del orden de los demás módulos)
+	local all = Profiles.all()
+	for profile, st in states do
+		if all[profile.player] ~= profile or not profile.player.Parent then
+			local ok, err = pcall(cleanup, profile, st)
+			if not ok then
+				states[profile] = nil -- que una limpieza rota no se repita en cada vuelta
+				warn("[CRUNCH!] Vecinas (salida):", err)
+			end
+		end
+	end
+	for player, profile in all do
+		if not states[profile] and player.Parent and player:GetAttribute("Loaded") then
+			ensure(profile)
+		end
+	end
+
+	for profile, st in states do
+		st.budget = math.min(GF.BudgetMax, st.budget + GF.BudgetRate * dt)
+		-- Por jugadora: un hormiguero en mal estado no congela Vecinas para las demás
+		local ok, err = pcall(updateHome, profile, st)
+		if not ok and ticks % 50 == 0 then
+			warn("[CRUNCH!] Vecinas:", err)
+		end
+	end
+	updateRaids(dt)
+
+	if ticks % 2 == 0 then
+		for profile, st in states do
+			pcall(syncHill, profile, st) -- solo pinta el cartel: si falla, ya lo dirá updateHome
+		end
+	end
+	if ticks % 3 == 0 then
+		updateGreetings()
+	end
+	if ticks % 10 == 0 then
+		-- Olvida mordiscos viejos y comidas que ya no existen
+		for food, bites in foodBites do
+			local alive = false
+			for who, at in bites do
+				if t - at > D.Window or not states[who] then
+					bites[who] = nil
+				else
+					alive = true
+				end
+			end
+			if not alive or not food.Parent then
+				foodBites[food] = nil
+			end
+		end
+		for key, untilTime in giftCooldown do
+			if untilTime < t then
+				giftCooldown[key] = nil
+			end
+		end
+		for key, untilTime in greetCooldown do
+			if untilTime < t then
+				greetCooldown[key] = nil
+			end
+		end
+	end
+end
+
 local function loop()
 	local last = os.clock()
 	local ticks = 0
@@ -989,59 +1054,9 @@ local function loop()
 		local dt = math.min(t - last, 0.5)
 		last = t
 		ticks += 1
-
-		-- Altas y bajas (sin depender del orden de los demás módulos)
-		local all = Profiles.all()
-		for profile, st in states do
-			if all[profile.player] ~= profile or not profile.player.Parent then
-				cleanup(profile, st)
-			end
-		end
-		for player, profile in all do
-			if not states[profile] and player.Parent and player:GetAttribute("Loaded") then
-				ensure(profile)
-			end
-		end
-
-		for profile, st in states do
-			st.budget = math.min(GF.BudgetMax, st.budget + GF.BudgetRate * dt)
-			updateHome(profile, st)
-		end
-		updateRaids(dt)
-
-		if ticks % 2 == 0 then
-			for profile, st in states do
-				syncHill(profile, st)
-			end
-		end
-		if ticks % 3 == 0 then
-			updateGreetings()
-		end
-		if ticks % 10 == 0 then
-			-- Olvida mordiscos viejos y comidas que ya no existen
-			for food, bites in foodBites do
-				local alive = false
-				for who, at in bites do
-					if t - at > D.Window or not states[who] then
-						bites[who] = nil
-					else
-						alive = true
-					end
-				end
-				if not alive or not food.Parent then
-					foodBites[food] = nil
-				end
-			end
-			for key, untilTime in giftCooldown do
-				if untilTime < t then
-					giftCooldown[key] = nil
-				end
-			end
-			for key, untilTime in greetCooldown do
-				if untilTime < t then
-					greetCooldown[key] = nil
-				end
-			end
+		local ok, err = pcall(step, t, dt, ticks)
+		if not ok then
+			warn("[CRUNCH!] Vecinas:", err)
 		end
 	end
 end

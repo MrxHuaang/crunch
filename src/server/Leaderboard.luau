@@ -133,9 +133,11 @@ function Leaderboard.start()
 			task.wait(1)
 			for player, profile in Profiles.all() do
 				local stats = player:FindFirstChild("leaderstats")
-				if stats then
-					(stats.Comida :: StringValue).Value = Format.short(profile.data.totalFood);
-					(stats.Capa :: StringValue).Value = tostring(profile.data.depth)
+				local comida = stats and stats:FindFirstChild("Comida")
+				local capa = stats and stats:FindFirstChild("Capa")
+				if comida and capa then
+					(comida :: StringValue).Value = Format.short(profile.data.totalFood);
+					(capa :: StringValue).Value = tostring(profile.data.depth)
 				end
 			end
 		end
@@ -144,7 +146,12 @@ function Leaderboard.start()
 	-- Cartel del servidor: se repinta a menudo, sale de memoria
 	task.spawn(function()
 		while true do
-			paint("ServerPanel", localRows())
+			local painted, err = pcall(function()
+				paint("ServerPanel", localRows())
+			end)
+			if not painted then
+				warn("[CRUNCH!] Cartel del servidor:", err)
+			end
 			task.wait(3)
 		end
 	end)
@@ -155,11 +162,16 @@ function Leaderboard.start()
 		local global = {}
 		local first = true
 		while true do
-			local rows = globalRows()
-			if rows then
-				global = rows
+			local painted, err = pcall(function()
+				local rows = globalRows()
+				if rows then
+					global = rows
+				end
+				paint("WorldPanel", global, if store and not worldDown then "Aún no hay nadie" else "Solo en el juego publicado")
+			end)
+			if not painted then
+				warn("[CRUNCH!] Cartel mundial:", err)
 			end
-			paint("WorldPanel", global, if store and not worldDown then "Aún no hay nadie" else "Solo en el juego publicado")
 			-- La primera vuelta llega antes de que cargue nadie: se repite pronto para incluir a quien entra
 			task.wait(if first then 20 else REFRESH)
 			first = false
