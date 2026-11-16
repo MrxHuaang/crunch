@@ -63,11 +63,14 @@ function Colony.clusterMates(profile, food: Model, count: number): { Model }
 		return {}
 	end
 	local center = food:GetPivot().Position
+	-- Un racimo nunca cruza de zona (Range es de pocos studs): las demás zonas se descartan sin medir
+	local base = FoodService.defOf(food)
+	local zone = base and base.zone
 	local near = {}
 	for other in FoodService.list() do
 		if other ~= food then
 			local def = FoodService.defOf(other)
-			if def and canEat(profile, def) then
+			if def and (zone == nil or def.zone == zone) and canEat(profile, def) then
 				local gap = ((other:GetPivot().Position - center) * Vector3.new(1, 0, 1)).Magnitude - ((other:GetAttribute("Radius") :: number?) or 0)
 				if gap <= Config.Chain.Range then
 					table.insert(near, { food = other, gap = gap })

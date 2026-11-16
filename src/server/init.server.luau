@@ -1,4 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local started = os.clock() -- cuánto tarda en levantarse el mundo (ver el mensaje del final)
 
 local World = require(script.World)
 local FoodService = require(script.FoodService)
@@ -49,4 +50,4 @@ for _, name in { "Quests", "WorldEvents", "PetService", "Hazards", "Allies", "Go
 	end
 end
 
-print("[CRUNCH!] servidor listo")
+print(string.format("[CRUNCH!] servidor listo en %.1f s", os.clock() - started))

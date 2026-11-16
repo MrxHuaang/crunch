@@ -32,6 +32,13 @@ local GLIDE_TIME = 2.8 -- y como mucho tarda esto, aunque el salto sea enorme
 local VIEW = 400 -- más lejos que esto (hormiguero y rutas) no se calcula nada
 local SNAP = 40 -- fuera de cámara, más lejos que esto de su sitio se recolocan sin correr
 local HIDDEN = 220 -- nunca se recoloca de golpe nada a menos de esto de la cámara
+-- Hormigas que no se ven: siguen su cuenta pero no se recolocan sus piezas (mover ~1.100 piezas en
+-- cada fotograma era lo más caro del cliente). Detrás de la cámara (más de ~84° del centro de la
+-- vista), nunca; más lejos que FAR, uno de cada FAR_EVERY fotogramas. Nunca a menos de NEAR.
+local BEHIND_DOT = 0.1
+local FAR = 160
+local FAR_EVERY = 3
+local NEAR = 30
 
 local SOLDIER_SIZE = 1.7
 local SOLDIER_PACE = 0.88 -- las soldado van un pelín más despacio
@@ -75,6 +82,20 @@ local colonies: { [Model]: any } = {}
 local order: { any } = {} -- mismas colonias, en orden fijo para que piezas y CFrames cuadren
 local parts: { BasePart } = {}
 local cframes: { CFrame } = {}
+local viewLook = Vector3.zAxis -- hacia dónde mira la cámara (lo pone el bucle cada fotograma)
+local frameNo = 0
+-- Solo lo que cambió este fotograma va a BulkMoveTo: cobra por cada pieza que recibe, se mueva o no
+local moveParts: { BasePart } = {}
+local moveCFrames: { CFrame } = {}
+local moveN = 0
+
+local function queueMove(from: number, count: number)
+	for i = from + 1, from + count do
+		moveN += 1
+		moveParts[moveN] = parts[i]
+		moveCFrames[moveN] = cframes[i]
+	end
+end
 local partsDirty = true
 
 local markers: { BillboardGui } = {}
@@ -497,6 +518,27 @@ local function drawAnt(colony, ant, n: number, dt: number, clock: number, camPos
 	ant.pos = pos
 	ant.stride += moved
 
+	-- Fuera de la vista: sus piezas se quedan donde estaban. Su sitio sale del tiempo y de la ruta,
+	-- así que al volver a verse ya está donde toca. Tras rehacer la lista de piezas, se dibuja siempre.
+	local count = if soldier then 9 else 7
+	if cframes[n + count] ~= nil then
+		local rel = pos - camPos
+		local d = rel.Magnitude
+		if d > NEAR and rel:Dot(viewLook) < d * BEHIND_DOT then
+			-- Detrás: se aparca una vez (invisible). Dejarla donde estaba creaba hormigas congeladas que
+			-- se veían al girar la cámara
+			if cframes[n + 1] ~= PARKED then
+				for i = n + 1, n + count do
+					cframes[i] = PARKED
+				end
+				queueMove(n, count)
+			end
+			return n + count
+		elseif d > FAR and (frameNo + math.floor(ant.seed * 1000)) % FAR_EVERY ~= 0 then
+			return n + count
+		end
+	end
+
 	-- 3. Rumbo con histéresis: corriendo apunta a un punto que solo se renueva si su sitio se
 	-- aleja más de REAIM (así no gira cada fotograma si el sitio tiembla); andando, el de la ruta.
 	if ant.running then
@@ -554,15 +596,21 @@ local function drawAnt(colony, ant, n: number, dt: number, clock: number, camPos
 		cframes[n + 2] = base * form.jawR * CFrame.Angles(0, clack, 0) * JAW_TIP
 		n += 2
 	end
+	queueMove(n - count, count)
 	return n
 end
 
 local function park(list: { any }, n: number): number
 	for _, ant in list do
-		for _ = 1, #ant.parts do
-			n += 1
-			cframes[n] = PARKED
+		local count = #ant.parts
+		-- Ya aparcada: no se vuelve a mover
+		if cframes[n + 1] ~= PARKED or cframes[n + count] ~= PARKED then
+			for i = n + 1, n + count do
+				cframes[i] = PARKED
+			end
+			queueMove(n, count)
 		end
+		n += count
 		ant.pos = nil
 	end
 	return n
@@ -588,8 +636,11 @@ function Swarm.start()
 
 	local player = Players.LocalPlayer
 	local maxLocal = Config.Swarm.MaxLocal
+	local maxOther = Config.Swarm.MaxOther
 	if UserInputService.TouchEnabled and not UserInputService.MouseEnabled then
-		maxLocal = math.floor(maxLocal / 2) -- los móviles mueven menos piezas
+		-- Los móviles mueven menos piezas; las colonias ajenas, aún menos que la tuya
+		maxLocal = math.floor(maxLocal / 2)
+		maxOther = math.floor(maxOther / 3)
 	end
 
 	RunService.Heartbeat:Connect(function(rawDt)
@@ -602,6 +653,8 @@ function Swarm.start()
 		local clock = os.clock()
 		local camera = Workspace.CurrentCamera
 		local camPos = if camera then camera.CFrame.Position else Vector3.zero
+		viewLook = if camera then camera.CFrame.LookVector else Vector3.zAxis
+		frameNo += 1
 
 		-- Ajusta cuántas hormigas se dibujan por colonia
 		for _, hill in hills:GetChildren() do
@@ -618,7 +671,7 @@ function Swarm.start()
 			end
 			local isLocal = owner == player.UserId
 			colony.isLocal = isLocal
-			local total = math.min(workers, if isLocal then maxLocal else Config.Swarm.MaxOther)
+			local total = math.min(workers, if isLocal then maxLocal else maxOther)
 			local soldiers = math.min(hill:GetAttribute("Soldiers") or 0, if isLocal then SOLDIER_LOCAL else SOLDIER_OTHER, total)
 			soldiers = math.max(math.floor(soldiers), 0)
 			resize(colony.soldiers, soldiers, true)
@@ -744,9 +797,14 @@ function Swarm.start()
 			markerWant[i] = false
 		end
 
-		if n > 0 and n == #parts then
-			Workspace:BulkMoveTo(parts, cframes, Enum.BulkMoveMode.FireCFrameChanged)
+		if moveN > 0 and n == #parts then
+			for i = moveN + 1, #moveParts do
+				moveParts[i] = nil
+				moveCFrames[i] = nil
+			end
+			Workspace:BulkMoveTo(moveParts, moveCFrames, Enum.BulkMoveMode.FireCFrameChanged)
 		end
+		moveN = 0
 	end)
 end
 

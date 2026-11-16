@@ -775,6 +775,9 @@ function Tree.refresh(): boolean
 	local jelly = State.num("Jelly")
 	local workers = State.num("Workers")
 	local anyAffordable = false
+	-- Cerrado solo hace falta saber si hay algo que comprar (el aviso del botón); se pinta al abrir.
+	-- Antes repintaba unas 70 cámaras con cada cambio de comida, varias veces por segundo.
+	local paint = if isOpen then paintChamber else function(_view, _state, _text, _affordable) end
 
 	for _, def in Config.Tree do
 		local view = nodeViews[def.id]
@@ -784,7 +787,7 @@ function Tree.refresh(): boolean
 			local affordable = unlocked and workers < cap and food >= Stats.workerCost(workers, stats.workerDiscount)
 			anyAffordable = anyAffordable or affordable
 			local state = if not unlocked then "locked" elseif workers == 0 then "empty" elseif workers >= cap then "max" else "owned"
-			paintChamber(view, state, workers .. "/" .. cap, affordable)
+			paint(view, state, workers .. "/" .. cap, affordable)
 		else
 			local level = nodes[def.id] or 0
 			local available = Stats.available(def, depth)
@@ -794,7 +797,7 @@ function Tree.refresh(): boolean
 			anyAffordable = anyAffordable or affordable
 			local state = if not unlocked then "locked" elseif maxed then "max" elseif capped then "capped" elseif level == 0 then "empty" else "owned"
 			local text = if def.max == 1 then (if maxed then "Listo" else "Nuevo") else level .. "/" .. math.max(available, 0)
-			paintChamber(view, state, text, affordable)
+			paint(view, state, text, affordable)
 		end
 	end
 
@@ -802,7 +805,7 @@ function Tree.refresh(): boolean
 		local level = royal[def.id] or 0
 		local maxed = level >= def.max
 		local affordable = not maxed and jelly >= Stats.royalCost(def, level)
-		paintChamber(royalViews[def.id], if maxed then "max" elseif level == 0 then "empty" else "owned", level .. "/" .. def.max, affordable)
+		paint(royalViews[def.id], if maxed then "max" elseif level == 0 then "empty" else "owned", level .. "/" .. def.max, affordable)
 	end
 
 	-- Galerías: ¿hay alguna abierta que te puedas pagar?

@@ -52,6 +52,33 @@ end
 Sfx.start()
 Fx.start()
 local hud = Hud.start()
+
+-- Calidad: en celular o con la calidad gráfica en baja (1-3), el decorado pierde el contorno de tinta:
+-- cada Highlight vuelve a dibujar todo lo que contiene. La comida, los hormigueros, las puertas y el
+-- enjambre lo conservan, porque es lo que se busca y se toca.
+local DECOR_OUTLINES = { { "Zones" }, { "Props" }, { "Life", "Clouds" }, { "Life", "Critters" }, { "GardenToys" }, { "Board" } }
+local function lowQuality(): boolean
+	local ok, level = pcall(function()
+		return UserSettings():GetService("UserGameSettings").SavedQualityLevel.Value
+	end)
+	return Hud.compact() or (ok and level >= 1 and level <= 3)
+end
+task.spawn(function()
+	while true do -- barato (seis búsquedas) y sigue al ajuste de calidad y a lo que aparece tarde
+		local on = not lowQuality()
+		for _, path in DECOR_OUTLINES do
+			local holder: Instance? = Workspace
+			for _, name in path do
+				holder = holder and holder:FindFirstChild(name)
+			end
+			local outline = holder and holder:FindFirstChildOfClass("Highlight")
+			if outline and outline.Enabled ~= on then
+				outline.Enabled = on
+			end
+		end
+		task.wait(3)
+	end
+end)
 Bubble.start()
 Places.start()
 AntAnim.start()

@@ -55,14 +55,26 @@ local function edible(stats, def): boolean
 	return def ~= nil and def.zone <= stats.depth and (not def.hard or stats.canBiteHard)
 end
 
+-- Zona del túnel en la que está una posición (la puerta cuenta como su zona; el jardín es la 1)
+local function zoneAt(position: Vector3): number
+	for i = #Config.Zones, 2, -1 do
+		if position.Z <= Config.Zones[i].z0 + 12 then
+			return i
+		end
+	end
+	return 1
+end
+
 -- La comida que te dejan morder más cercana a `position` (borde a menos de `range`), sin `except`
 local function nearestEdible(stats, position: Vector3, range: number, except: Model?): Model?
 	local best: Model? = nil
 	local bestDistance = range
+	-- Solo tu zona y las de al lado: las demás quedan a cientos de studs (se descartan sin medir)
+	local here = zoneAt(position)
 	for food in FoodService.list() do
 		if food ~= except then
 			local def = FoodService.defOf(food)
-			if edible(stats, def) then
+			if def and math.abs(def.zone - here) <= 1 and edible(stats, def) then
 				local distance = edgeDistance(position, food)
 				if distance <= bestDistance then
 					best = food
@@ -74,15 +86,6 @@ local function nearestEdible(stats, position: Vector3, range: number, except: Mo
 	return best
 end
 
--- Zona del túnel en la que está una posición (la puerta cuenta como su zona; el jardín es la 1)
-local function zoneAt(position: Vector3): number
-	for i = #Config.Zones, 2, -1 do
-		if position.Z <= Config.Zones[i].z0 + 12 then
-			return i
-		end
-	end
-	return 1
-end
 
 local function hardMult(stats, def): number
 	return if def and def.hard then stats.hardMult else 1

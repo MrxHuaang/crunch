@@ -434,8 +434,16 @@ function FoodService.isFood(instance: any): boolean
 	return typeof(instance) == "Instance" and foods[instance] ~= nil
 end
 
+-- FoodId se pone una sola vez al construir la comida (FoodModels): se recuerda por modelo, porque
+-- la colonia y las aliadas lo preguntan para cada comida del mapa varias veces por segundo
+local defCache: { [Model]: any } = setmetatable({}, { __mode = "k" }) :: any
 function FoodService.defOf(food: Model)
-	return Config.FoodById[food:GetAttribute("FoodId") :: string]
+	local def = defCache[food]
+	if def == nil then
+		def = Config.FoodById[food:GetAttribute("FoodId") :: string] or false
+		defCache[food] = def
+	end
+	return def or nil
 end
 
 function FoodService.list()

@@ -412,7 +412,16 @@ end
 function Places.start()
 	buildTitle()
 	findGates()
-	State.onChange(applyAll)
+	-- Solo cuando cambia lo que abre las puertas: con cada cambio del perfil (la comida, varias veces
+	-- por segundo) se volvían a colocar las barras de todas las puertas cerradas
+	local applied = ""
+	State.onChange(function()
+		local key = tostring(gateDepth()) .. "|" .. tostring(depthKnown())
+		if key ~= applied then
+			applied = key
+			applyAll()
+		end
+	end)
 
 	task.spawn(function()
 		while true do
