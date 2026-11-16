@@ -902,6 +902,8 @@ local function updateDig()
 		else "Gratis con " .. Format.short(cost) .. " de comida: te faltan " .. Format.short(cost - food)
 	if tier and digPrompts.dig then
 		digPrompts.dig:SetAttribute("Price", priceText(tier))
+		-- Con la comida ya en el bolsillo, excavar es gratis: no se ofrece pagar por ello
+		digPrompts.dig.Enabled = food < cost
 	end
 	if digPrompts.half then
 		digPrompts.half:SetAttribute("Price", priceText("halfDig"))

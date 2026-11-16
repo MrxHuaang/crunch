@@ -226,6 +226,14 @@ local function paidEggs(profile): number
 	return if type(eggs) == "number" and eggs > 0 then eggs else 0
 end
 
+-- El huevo comprado vale como un saco pequeño (Config.Egg.PaidSeconds), no como el del árbol
+local function paidEggValue(profile): number
+	local stats = profile.stats
+	local zoneFood = Config.Foods[(stats.depth - 1) * 3 + 1]
+	local colony = profile.data.rate / math.max(stats.foodMult, 1e-3) * Config.Egg.PaidSeconds
+	return math.max(colony, Config.Egg.PaidFloor * stats.biteDamage * zoneFood.value)
+end
+
 local function updateEgg(nest, profile, now: number, root: BasePart?)
 	local stats = profile.stats
 	local hasTree = stats.eggs > 0
@@ -247,12 +255,15 @@ local function updateEgg(nest, profile, now: number, root: BasePart?)
 		local position = nest.eggSpot + Vector3.new(0, 2.5, 0)
 		dropEgg(nest)
 		-- Primero se gasta el del árbol si ya tocaba; si no, uno pagado. Si queda otro, sale enseguida.
+		local value
 		if natural then
 			profile.eggAt = now + stats.eggInterval
+			value = eggValue(profile)
 		else
 			profile.data.paid.eggs = math.max(paidEggs(profile) - 1, 0)
+			value = paidEggValue(profile)
 		end
-		local credited = Profiles.addFood(profile, eggValue(profile))
+		local credited = Profiles.addFood(profile, value)
 		Profiles.push(profile)
 		fxRemote:FireClient(profile.player, "Egg", position, credited)
 	end

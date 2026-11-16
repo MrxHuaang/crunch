@@ -591,8 +591,8 @@ local function sackGain(seconds: number, floor: number): number
 	local depth = math.clamp(State.depth(), 1, #Config.Zones)
 	local zoneFood = Config.Foods[(depth - 1) * 3 + 1]
 	local bite = State.stats().biteDamage or 1
-	local base = math.max(rate() * seconds, floor * bite * (zoneFood and zoneFood.value or 1))
-	return base * foodMult()
+	-- Rate ya trae el multiplicador de comida (es lo acreditado); el mínimo no, como en el servidor
+	return math.max(rate() * seconds, floor * bite * (zoneFood and zoneFood.value or 1) * foodMult())
 end
 
 local function colonyRow(mult: number)
@@ -768,7 +768,9 @@ local EFFECTS = {
 		return { { "Frenesí", "x" .. Config.Frenzy.Mult .. " durante 1 min" } }
 	end,
 	egg = function()
-		return { { "Aparece", "junto a tu hormiguero" } }
+		local rows = colonyTime(Config.Egg.PaidSeconds, Config.Egg.PaidFloor, "10 min")
+		table.insert(rows, { "Aparece", "junto a tu hormiguero" })
+		return rows
 	end,
 	potion = function()
 		return doubleFood(15 * 60)
@@ -800,6 +802,10 @@ local EFFECTS = {
 		if saved > 0 then
 			table.insert(rows, { "Ya tienes guardados", tostring(saved) })
 		end
+		-- Antes del primer enjambre no sirve en horas: no se vende hasta que ya puedas enjambrar
+		if jelly < 1 and State.num("Rebirths") == 0 then
+			return rows, nil, "Aún no puedes enjambrar: sirve cuando tu partida ya dé jalea"
+		end
 		return rows
 	end,
 	jar = function()
@@ -830,6 +836,16 @@ local function digEffect(def)
 		local span = if from == to then "la capa " .. from else "las capas " .. from .. " a " .. to
 		return { { "Sirve para", span }, { "Tu próxima capa", "es la " .. nextLayer } }, nil, "No es para tu próxima capa"
 	end
+	-- Lo que de verdad ahorra: la comida de excavar y, a tu ritmo de colonia, cuánto tardarías
+	local cost = Stats.digCost(depth) * (if State.num("HalfDig") > 0 then 0.5 else 1)
+	local food = State.num("Food")
+	if food >= cost then
+		table.insert(rows, { "Ya tienes", Format.short(cost) .. " de comida" })
+		return rows, nil, "Ya tienes la comida: excávala gratis en tu hormiguero"
+	end
+	local missing = cost - food
+	local r = rate()
+	table.insert(rows, { "Te ahorras", Format.short(missing) .. " de comida" .. (if r > 0 then " (≈ " .. minutes(missing / r) .. " de tu colonia)" else "") })
 	return rows
 end
 

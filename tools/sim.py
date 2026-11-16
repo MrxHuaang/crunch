@@ -270,6 +270,8 @@ CHARGE_USE = 0.3
 # Config.Egg (Interval, Seconds, IntervalStep, SecondsStep, MinInterval) y Config.Fungus (Regrow, Duration, Step)
 EGG = (300, 15, 15, 4, 210)
 EGG_FLOOR = 300   # Config.Egg.FloorBites: como poco, tantos mordiscos a la comida pequeña de tu zona
+# Config.Egg.PaidSeconds = 600 y PaidFloor = 200 son del huevo comprado con Robux: el simulador no juega
+# productos de pago, así que no se usan aquí (se anotan para que Config y sim.py sigan a la par).
 FUNGUS = (300, 15, 3)
 TROPHY = 0.03
 BITE_TIME = 3              # Colony: una comida pierde como mucho su vida cada 3 s

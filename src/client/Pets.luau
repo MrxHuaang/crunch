@@ -58,7 +58,7 @@ local HOP = { rana = 0.95, grillo = 0.8, escarabajo = 0.35, escarabajoOro = 0.35
 local FLAP = { mariposa = { 9, 0.85 } } -- frecuencia y amplitud; el resto aletea rápido
 
 local remote: RemoteEvent? = nil
-local inv = { pets = {}, equipped = {}, eggs = {} }
+local inv = { pets = {}, equipped = {}, eggs = {}, next = nil :: { s: string, r: number }? }
 local sideButton = nil
 
 local gui: ScreenGui
@@ -76,6 +76,8 @@ local buyFace: TextButton
 local buyLabel: TextLabel
 local buyHolder: Frame
 local lastBuy = 0
+local oddsLines = {} -- probabilidades: se ocultan cuando el huevo se enseña antes de pagar
+local revealLabel: TextLabel
 
 local perch = {} -- [hueco] = { holder, button, stroke, scale, plus, chip, view, key }
 local perchTotals: TextLabel
@@ -111,9 +113,9 @@ local function at(object: GuiObject, x: number, y: number, w: number?, h: number
 	end
 end
 
-local function send(action: string, id: number?)
+local function send(action: string, id: any?, extra: any?)
 	if remote then
-		remote:FireServer(action, id)
+		remote:FireServer(action, id, extra)
 	end
 end
 
@@ -275,6 +277,20 @@ local function paintEgg()
 	end
 	local depth, price, full = eggState()
 	eggCaption.Text = "Huevo de capa " .. depth
+	-- Donde los sorteos pagados están restringidos, el servidor dice qué sale antes de pagar
+	local known = inv.next
+	local species = known and PetDefs.SpeciesById[known.s]
+	local rarity = known and PetDefs.Rarities[known.r]
+	for _, item in oddsLines do
+		item.Visible = not (species and rarity)
+	end
+	if revealLabel then
+		revealLabel.Visible = (species and rarity) ~= nil
+		if species and rarity then
+			revealLabel.Text = `Dentro hay:\n{species.name}\n{rarity.name}`
+			revealLabel.TextColor3 = Comic.Ink
+		end
+	end
 	buyLabel.TextTransparency = 0
 	if full then
 		buyFace.BackgroundColor3 = DIM
@@ -575,7 +591,9 @@ local function buy()
 	end
 	lastBuy = now
 	Comic.punch(eggScale, 1.2)
-	send("Buy")
+	-- Con el huevo a la vista (PolicyService), se dice cuál se paga: el servidor rechaza otro
+	local known = inv.next
+	send("Buy", known and known.s, known and known.r)
 end
 
 local function onEquip()
@@ -717,7 +735,16 @@ local function buildEggStand()
 		at(line, PAD + 190, y, 190, 18)
 		line.TextXAlignment = Enum.TextXAlignment.Left
 		line.ZIndex = 3
+		table.insert(oddsLines, dot)
+		table.insert(oddsLines, line)
 	end
+	-- En su lugar, cuando se sabe qué sale (ver PetService: PolicyService)
+	revealLabel = Comic.label(body, "", Comic.Display, 22, Comic.Ink)
+	at(revealLabel, PAD + 172, EGG_Y + 60, 210, 92)
+	revealLabel.TextXAlignment = Enum.TextXAlignment.Left
+	revealLabel.TextYAlignment = Enum.TextYAlignment.Top
+	revealLabel.ZIndex = 3
+	revealLabel.Visible = false
 
 	local holder, buttonFace = Comic.button(body, UDim2.fromOffset(212, 52), Comic.Yellow, 5)
 	at(holder, PAD + 166, EGG_Y + 160)
@@ -1526,6 +1553,7 @@ local function onEvent(kind: string, payload: any)
 		inv.pets = if type(payload.pets) == "table" then payload.pets else {}
 		inv.equipped = if type(payload.equipped) == "table" then payload.equipped else {}
 		inv.eggs = if type(payload.eggs) == "table" then payload.eggs else {}
+		inv.next = if type(payload.next) == "table" then payload.next else nil
 		if selected and not find(selected) then
 			selected = nil
 		end

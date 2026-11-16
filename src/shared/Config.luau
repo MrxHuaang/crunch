@@ -90,7 +90,9 @@ Config.Frenzy = { Mult = 3, Duration = 20, Cooldown = 90, LenStep = 8, HiveStep 
 Config.Combo = { Step = 0.03, Window = 1.6, Typical = 8 }
 -- Huevo dorado: cada Interval s (IntervalStep menos por nivel, nunca menos de MinInterval) vale Seconds
 -- s de colonia (SecondsStep más por nivel) o, como poco, FloorBites mordiscos a la comida pequeña de tu zona
-Config.Egg = { Interval = 300, IntervalStep = 15, MinInterval = 210, Seconds = 15, SecondsStep = 4, FloorBites = 300 }
+-- PaidSeconds y PaidFloor: el huevo comprado (producto "egg"), como un saco pequeño: 10 min de colonia
+-- (el saco, 15 por 29 R$) y como poco PaidFloor mordiscos. El del árbol usa Seconds y FloorBites.
+Config.Egg = { Interval = 300, IntervalStep = 15, MinInterval = 210, Seconds = 15, SecondsStep = 4, FloorBites = 300, PaidSeconds = 600, PaidFloor = 200 }
 Config.Fungus = { Regrow = 300, Duration = 15, Step = 3, Mult = 2 }
 Config.Trophy = { Bonus = 0.03 } -- por cada tipo de comida terminado alguna vez
 
@@ -919,12 +921,12 @@ Config.Products = {
 	-- ≈ 30 min con la comida de la zona siguiente (cada trozo vale unas 4 veces más); la capa no cambia
 	{ id = "zoneKey", productId = 3731486122, robux = 29, group = "Avance", name = "Llave maestra", desc = "Abre la puerta de la zona siguiente durante 30 minutos para que la pruebes. Tu capa no cambia." },
 	-- Tiempo. Saco = 15 min de colonia; caja = 60; carretilla = 240. Frenesí ≈ 2 min de comida
-	-- (x3 durante 60 s). Huevo = 90 s de colonia.
+	-- (x3 durante 60 s). Huevo = 10 min de colonia (Config.Egg.PaidSeconds).
 	{ id = "sack", productId = 3731486161, robux = 29, group = "Tiempo", name = "Saco de comida", desc = "15 minutos de trabajo de tu colonia, de golpe." },
 	{ id = "crate", productId = 3731486197, robux = 69, group = "Tiempo", name = "Caja de comida", desc = "1 hora de trabajo de tu colonia, de golpe." },
 	{ id = "bigSack", productId = 3731486225, robux = 179, group = "Tiempo", name = "Carretilla", desc = "4 horas de trabajo de tu colonia, de golpe." },
 	{ id = "frenzy", productId = 3731486252, robux = 19, group = "Tiempo", name = "Frenesí ya", desc = "Un minuto de frenesí al instante." },
-	{ id = "egg", productId = 3731486283, robux = 25, group = "Tiempo", name = "Huevo dorado", desc = "Un huevo dorado junto a tu hormiguero, ya." },
+	{ id = "egg", productId = 3731486283, robux = 25, group = "Tiempo", name = "Huevo dorado", desc = "Un huevo dorado junto a tu hormiguero con 10 minutos de trabajo de tu colonia." },
 	-- Potenciadores. Poción: +15 / +60 min de comida (dobla lo que ganas ese rato). Velocidad +40 %
 	-- 15 min ≈ +3-4 min de comida a mano. Imán 15 min ≈ +1-2 min. Jalea x2 ≈ un enjambre más.
 	{ id = "potion", productId = 3731486315, robux = 25, group = "Potenciadores", name = "Poción x2", desc = "Toda la comida vale el doble durante 15 minutos. Se acumula." },

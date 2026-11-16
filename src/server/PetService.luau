@@ -7,6 +7,7 @@
 --   eggs = { 4, 1, 0, ... }, -- huevos comprados en cada capa en esta partida (sube el precio)
 --   next = 8, -- siguiente id
 --   run = 2, -- enjambre al que pertenece `eggs`: al enjambrar se ponen a cero
+--   nextEgg = { s = "grillo", r = 2 }, -- lo que saldrá del próximo huevo, si se enseña antes de pagar
 -- }
 -- Enjambrar no toca data.pets: los bichos se quedan.
 --
@@ -14,12 +15,19 @@
 --   cliente -> servidor: ("Sync") | ("Buy") | ("Best") | ("Equip", id) | ("Unequip", id) | ("Release", id) | ("Fuse", id)
 --   servidor -> cliente: ("Sync", { pets, equipped, eggs }) | ("Hatch", entry) | ("Fused", entry) | ("Fail", texto)
 -- Atributo del jugador PetsEquipped: "mariquita:2,abeja:1" (lo leen todos para dibujar seguidores).
+--
+-- Huevos y PolicyService: el huevo se paga con comida y la comida también se vende por Robux, así que
+-- para Roblox es un "artículo aleatorio pagado". Donde eso está restringido
+-- (ArePaidRandomItemsRestricted, o si no se pudo preguntar), lo que sale del huevo se decide antes de
+-- pagar y el cliente lo enseña (Sync.next): ya no es un sorteo. Para las demás, sorpresa como siempre.
 
 local Players = game:GetService("Players")
+local PolicyService = game:GetService("PolicyService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local PetDefs = require(ReplicatedStorage.Shared.PetDefs)
+local DevTools = require(script.Parent.DevTools)
 local Profiles = require(script.Parent.Profiles)
 
 local PetService = {}
@@ -30,6 +38,8 @@ local remote: RemoteEvent
 local rng = Random.new()
 local eggTimes: { [Player]: { number } } = {}
 local actionTimes: { [Player]: { number } } = {}
+-- [jugador] = true si hay que enseñar el huevo antes de pagar; nil mientras se pregunta a Roblox
+local revealed: { [Player]: boolean } = {}
 local checked: { [any]: boolean } = setmetatable({}, { __mode = "k" }) :: any
 local syncKey: { [any]: string } = setmetatable({}, { __mode = "k" }) :: any
 
@@ -125,13 +135,49 @@ local function equippedEntries(pets)
 	return entries
 end
 
+-- Lo que saldrá del próximo huevo. Se guarda en la partida: salir y volver a entrar no lo cambia,
+-- así que no se puede "volver a tirar" hasta ver una mítica antes de pagar.
+local function nextEggOf(profile): { s: string, r: number }
+	local pets = petsOf(profile)
+	local known = pets.nextEgg
+	if type(known) ~= "table" or not PetDefs.SpeciesById[known.s] or not PetDefs.Rarities[known.r] then
+		local species, rarity = PetDefs.roll(rng)
+		known = { s = species, r = rarity }
+		pets.nextEgg = known
+	end
+	return known
+end
+
 local function sync(profile)
 	local pets = petsOf(profile)
 	remote:FireClient(profile.player, "Sync", {
 		pets = pets.list,
 		equipped = pets.equipped,
 		eggs = pets.eggs,
+		next = if revealed[profile.player] then nextEggOf(profile) else nil, -- nil: sorpresa
 	})
+end
+
+-- ¿Hay que enseñar el huevo antes de pagar? Si Roblox no responde, sí: es lo seguro
+local function checkPolicy(player: Player)
+	local ok, info = false, nil
+	for attempt = 1, 3 do
+		ok, info = pcall(function()
+			return PolicyService:GetPolicyInfoForPlayerAsync(player)
+		end)
+		if ok or not player.Parent then
+			break
+		end
+		task.wait(attempt)
+	end
+	if not player.Parent then
+		return
+	end
+	revealed[player] = not ok or info.ArePaidRandomItemsRestricted == true
+	local profile = Profiles.get(player)
+	if profile then
+		sync(profile)
+	end
 end
 
 local function fail(profile, text: string)
@@ -195,9 +241,13 @@ local function onRefresh(profile)
 	end
 end
 
-local function buyEgg(profile)
+local function buyEgg(profile, shownSpecies: any, shownRarity: any)
 	local player = profile.player
 	if not allow(eggTimes, player, PetDefs.EggsPerSecond) then
+		return
+	end
+	if revealed[player] == nil then
+		fail(profile, "Un momento, el huevo se está preparando")
 		return
 	end
 	local data = profile.data
@@ -212,10 +262,24 @@ local function buyEgg(profile)
 		fail(profile, "Me falta comida para ese huevo")
 		return
 	end
+	-- Con el huevo a la vista (PolicyService), solo se cobra el que el cliente estaba enseñando:
+	-- con lag, un doble toque no compra uno que aún no se ha visto
+	local species, rarity
+	if revealed[player] then
+		local known = nextEggOf(profile)
+		if shownSpecies ~= known.s or shownRarity ~= known.r then
+			sync(profile)
+			fail(profile, "Mira bien: el huevo cambió")
+			return
+		end
+		species, rarity = known.s, known.r
+		pets.nextEgg = nil -- el siguiente se sortea al enseñarlo
+	else
+		species, rarity = PetDefs.roll(rng)
+	end
 	data.food -= price
 	pets.eggs[depth] += 1
 
-	local species, rarity = PetDefs.roll(rng)
 	local entry = { id = pets.next, s = species, r = rarity, l = depth }
 	pets.next += 1
 	table.insert(pets.list, entry)
@@ -379,13 +443,13 @@ local function fuse(profile, id: number)
 	sync(profile)
 end
 
-local function onEvent(player: Player, action: any, id: any)
+local function onEvent(player: Player, action: any, id: any, ...: any)
 	local profile = Profiles.get(player)
 	if not profile or type(action) ~= "string" then
 		return
 	end
 	if action == "Buy" then
-		buyEgg(profile)
+		buyEgg(profile, id, ...)
 		return
 	end
 	if not allow(actionTimes, player, ACTIONS_PER_SECOND) then
@@ -422,6 +486,19 @@ function PetService.start(remotes: Folder)
 	Players.PlayerRemoving:Connect(function(player)
 		eggTimes[player] = nil
 		actionTimes[player] = nil
+		revealed[player] = nil
+	end)
+	Players.PlayerAdded:Connect(checkPolicy)
+	for _, player in Players:GetPlayers() do
+		task.spawn(checkPolicy, player)
+	end
+
+	-- Panel DEV (solo Studio): probar los huevos como los ve quien tiene la restricción
+	DevTools.register("petReveal", "Huevos sin azar (PolicyService)", function(profile)
+		local player = profile.player
+		revealed[player] = not revealed[player]
+		sync(profile)
+		return if revealed[player] then "Huevos: se ve el bicho antes de pagar" else "Huevos: sorpresa"
 	end)
 
 	-- Los que entraron antes de arrancar este módulo
