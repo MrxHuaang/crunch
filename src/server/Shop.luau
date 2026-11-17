@@ -243,6 +243,7 @@ function Shop.resetRun(profile)
 	data.tartaDamage = 0
 	data.tartaDone = false
 	data.rate = 0
+	data.baseRate = 0
 	data.depth = 1 + math.min(data.royal.royalDepth or 0, Stats.MaxDepth - 1)
 
 	-- Nido heredado: empiezas con obreras y con la guardería justa para que quepan

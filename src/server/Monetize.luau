@@ -114,8 +114,8 @@ local function colonyTime(profile, seconds: number, floor: number): number
 	local stats = profile.stats
 	-- Aunque la colonia aún sea pequeña, el saco debe valer algo a tu nivel
 	local zoneFood = Config.Foods[(math.clamp(stats.depth, 1, #Config.Zones) - 1) * 3 + 1] or Config.Foods[1]
-	-- data.rate ya lleva el multiplicador de comida y addFood lo vuelve a aplicar: se quita aquí
-	local gain = math.max(math.floor(profile.data.rate / math.max(stats.foodMult, 1e-3) * seconds), floor * stats.biteDamage * zoneFood.value)
+	-- La tasa base ya lleva el multiplicador de comida y addFood lo vuelve a aplicar: se quita aquí
+	local gain = math.max(math.floor(Profiles.baseRate(profile) / math.max(stats.foodMult, 1e-3) * seconds), floor * stats.biteDamage * zoneFood.value)
 	return Profiles.addFood(profile, gain)
 end
 

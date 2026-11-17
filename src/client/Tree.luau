@@ -805,7 +805,9 @@ function Tree.refresh(): boolean
 		local level = royal[def.id] or 0
 		local maxed = level >= def.max
 		local affordable = not maxed and jelly >= Stats.royalCost(def, level)
-		paint(royalViews[def.id], if maxed then "max" elseif level == 0 then "empty" else "owned", level .. "/" .. def.max, affordable)
+		-- Néctar real no tiene tope de verdad (max 999): se enseña solo el nivel
+		local text = if def.max >= 999 then tostring(level) else level .. "/" .. def.max
+		paint(royalViews[def.id], if maxed then "max" elseif level == 0 then "empty" else "owned", text, affordable)
 	end
 
 	-- Galerías: ¿hay alguna abierta que te puedas pagar?

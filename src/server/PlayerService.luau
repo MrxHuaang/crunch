@@ -172,14 +172,15 @@ end
 local function grantOffline(profile)
 	local data = profile.data
 	local hours = profile.stats.offlineHours
-	if hours <= 0 or data.rate <= 0 then
+	local rate = Profiles.baseRate(profile) -- sin frenesí ni pociones: salir justo al acabar uno no multiplica
+	if hours <= 0 or rate <= 0 then
 		return
 	end
 	local away = math.clamp(os.time() - data.lastSeen, 0, hours * 3600)
 	if away < 60 then
 		return
 	end
-	local gain = math.floor(data.rate * away * (profile.stats.offlineEfficiency or Config.Offline.Efficiency) * profile.stats.offlineMult)
+	local gain = math.floor(rate * away * (profile.stats.offlineEfficiency or Config.Offline.Efficiency) * profile.stats.offlineMult)
 	if gain <= 0 then
 		return
 	end

@@ -139,7 +139,7 @@ local function income(profile): number
 	local zoneFood = Config.Foods[(stats.depth - 1) * 3 + 1] or Config.Foods[1]
 	local floor = 0.5 * stats.biteDamage * zoneFood.value * (stats.foodMult or 1)
 	local delivered = if st then recentDeposits(st) / S.PantryCapSeconds else 0
-	return math.max(profile.data.rate or 0, delivered, floor)
+	return math.max(Profiles.baseRate(profile), delivered, floor)
 end
 
 local function shareOf(st): number

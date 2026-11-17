@@ -157,8 +157,9 @@ function Stats.derive(nodes, royal, depth: number?, minis: { [string]: boolean }
 	local rawCooldown = PLAYER.BiteCooldown * PLAYER.ChewStep ^ lvl(nodes, "chew") / (1 + m("chew"))
 	local biteCooldown = math.max(PLAYER.MinBiteCooldown, rawCooldown)
 	local chewYield = PLAYER.MinBiteCooldown / math.min(rawCooldown, PLAYER.MinBiteCooldown)
-	local biteYield = Stats.biteYield(bite) * PLAYER.TitanPower ^ lvl(nodes, "titan") * 2 ^ lvl(royal, "royalBite") * chewYield
-	local foodMult = (1 + 0.5 * lvl(royal, "royalFood")) * biteYield
+	local REBIRTH = Config.Rebirth
+	local biteYield = Stats.biteYield(bite) * PLAYER.TitanPower ^ lvl(nodes, "titan") * (1 + REBIRTH.BiteStep * lvl(royal, "royalBite")) * chewYield
+	local foodMult = (1 + REBIRTH.FoodStep * lvl(royal, "royalFood")) * (1 + REBIRTH.NectarStep) ^ lvl(royal, "royalNectar") * biteYield
 	local carryScale = PLAYER.GiantCarry ^ lvl(nodes, "giant")
 	local workerScale = COLONY.Super ^ lvl(nodes, "super")
 	local critChance = math.min(PLAYER.CritCap, PLAYER.CritStep * lvl(nodes, "crit") + m("crit"))
@@ -256,7 +257,7 @@ function Stats.derive(nodes, royal, depth: number?, minis: { [string]: boolean }
 		workerCarry = (Stats.workerCarry(lvl(nodes, "workerCarry")) + m("workerCarry")) * workerScale,
 		workerDiscount = mini.cheapMult,
 		colonyMult = COLONY.Barracks ^ lvl(nodes, "barracks") * COLONY.Legion ^ lvl(nodes, "legion")
-			* 1.5 ^ lvl(royal, "royalColony") * (if lvl(nodes, "queen") > 0 then COLONY.Queen else 1),
+			* (1 + Config.Rebirth.ColonyStep * lvl(royal, "royalColony")) * (if lvl(nodes, "queen") > 0 then COLONY.Queen else 1),
 		colonySpread = COLONY.Spread, -- comidas del racimo que se reparten lo que no cabe en la marcada
 		tripMult = COLONY.Express ^ lvl(nodes, "express"),
 		trailBonus = (1 + COLONY.Sweet * lvl(nodes, "sweet")) * (1 + m("trail")) * (if lvl(nodes, "smart") > 0 then COLONY.Smart else 1),
@@ -279,7 +280,7 @@ function Stats.derive(nodes, royal, depth: number?, minis: { [string]: boolean }
 		trailSlots = lvl(nodes, "trail"),
 		hasFrenzy = lvl(nodes, "frenzy") > 0,
 		frenzyDuration = Config.Frenzy.Duration + Config.Frenzy.LenStep * lvl(nodes, "frenzyLen") + m("frenzyLen"),
-		frenzyCooldown = math.max(30, Config.Frenzy.Cooldown - Config.Frenzy.HiveStep * lvl(nodes, "hive") - m("frenzyCd")),
+		frenzyCooldown = math.max(Config.Frenzy.MinCooldown, Config.Frenzy.Cooldown - Config.Frenzy.HiveStep * lvl(nodes, "hive") - m("frenzyCd")),
 		frenzyMult = Config.Frenzy.Mult + lvl(nodes, "royalPher"),
 		smartTrail = lvl(nodes, "smart") > 0,
 
@@ -414,7 +415,7 @@ function Stats.nurseryFor(count: number): number
 end
 
 function Stats.royalCost(def, level: number): number
-	return def.cost + def.step * level
+	return math.max(1, math.floor(def.cost * def.growth ^ level + 0.5))
 end
 
 -- Costo de la siguiente obrera cuando ya tienes `count`.
@@ -579,7 +580,7 @@ local EFFECT = {
 		return "Viajes un " .. percent(1 - Config.Colony.Express ^ l) .. " más cortos"
 	end,
 	hive = function(l)
-		return "Frenesí cada " .. math.max(30, Config.Frenzy.Cooldown - Config.Frenzy.HiveStep * l) .. " s"
+		return "Frenesí cada " .. math.max(Config.Frenzy.MinCooldown, Config.Frenzy.Cooldown - Config.Frenzy.HiveStep * l) .. " s"
 	end,
 	royalPher = function(l)
 		return "Frenesí " .. times(Config.Frenzy.Mult + l)
@@ -633,7 +634,7 @@ local EFFECT = {
 		return if l > 0 then "La de al lado se lleva el " .. percent(ramp(l, EXTRA.DoubleJaw.Share, EXTRA.DoubleJaw.Step)) .. " del mordisco" else "Una comida por mordisco"
 	end,
 	buche = function(l)
-		return if l > 0 then "Te guardas el " .. percent(ramp(l, EXTRA.Buche.Share, EXTRA.Buche.Step)) .. " de cada entrega" else "Un solo estómago"
+		return if l > 0 then "Sales con el " .. percent(ramp(l, EXTRA.Buche.Share, EXTRA.Buche.Step)) .. " de cada entrega" else "Un solo estómago"
 	end,
 	giantFood = function(l)
 		local g = EXTRA.Giant
@@ -661,13 +662,16 @@ local EFFECT = {
 		return (if l == 1 then "1 salto" else l .. " saltos") .. " de rayo: arrancan " .. decimal(Stats.chainBites(l)) .. " mordiscos a las vecinas"
 	end,
 	royalFood = function(l)
-		return "Comida " .. times(1 + 0.5 * l)
+		return "Comida +" .. percent(Config.Rebirth.FoodStep * l)
 	end,
 	royalBite = function(l)
-		return "Mordida " .. times(2 ^ l)
+		return "Cada trozo rinde +" .. percent(Config.Rebirth.BiteStep * l)
 	end,
 	royalColony = function(l)
-		return "Colonia " .. times(1.5 ^ l)
+		return "Colonia +" .. percent(Config.Rebirth.ColonyStep * l)
+	end,
+	royalNectar = function(l)
+		return "Comida +" .. percent((1 + Config.Rebirth.NectarStep) ^ l - 1)
 	end,
 	royalStart = function(l)
 		return if l > 0 then "Empiezas con " .. Config.Rebirth.StartWorkers * l .. " obreras" else "Empiezas sola"

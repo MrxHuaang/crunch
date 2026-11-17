@@ -83,8 +83,8 @@ end
 local function income(profile, seconds: number, floorBites: number): number
 	local stats = profile.stats
 	local zoneFood = Config.Foods[(stats.depth - 1) * 3 + 1] or Config.Foods[1]
-	-- data.rate ya lleva el multiplicador de comida y addFood lo vuelve a aplicar: se quita aquí
-	return math.max(profile.data.rate / math.max(stats.foodMult, 1e-3) * seconds, floorBites * stats.biteDamage * zoneFood.value)
+	-- La tasa base ya lleva el multiplicador de comida y addFood lo vuelve a aplicar: se quita aquí
+	return math.max(Profiles.baseRate(profile) / math.max(stats.foodMult, 1e-3) * seconds, floorBites * stats.biteDamage * zoneFood.value)
 end
 
 local function onlineCount(): number

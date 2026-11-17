@@ -294,9 +294,12 @@ local function tick(profile, dt: number)
 	publish(hill, targets, crews, data.workers)
 
 	local credited = 0
+	local creditedBase = 0 -- lo que habría entrado sin frenesí ni ratos de trabajo doble (tasa base)
 	local remainders = {} -- solo se guardan las de los destinos de ahora
 	if data.workers > 0 and count > 0 then
 		local now = Workspace:GetServerTimeNow()
+		-- Lo temporal que multiplica a las obreras: frenesí y los ratos x2 de Perks (dentro de colonyMult)
+		local boost = (if now < profile.frenzyUntil then stats.frenzyMult else 1) * (stats.perkBoost or 1)
 		local mult = stats.colonyMult * (if now < profile.frenzyUntil then stats.frenzyMult else 1)
 		if marked and not crews then
 			mult *= stats.trailBonus
@@ -331,6 +334,7 @@ local function tick(profile, dt: number)
 			local scent = if crews and slot <= markedSlots then stats.trailBonus else 1
 			local raw = crewHere * stats.workerCarry / trip * mult * scent * work * dt
 			local gain = math.min(raw, cap * work)
+			local first = #plan + 1
 			table.insert(plan, { food = food, def = def, gain = gain, worth = worth })
 			if def.zone == 1 then
 				garden += gain
@@ -347,6 +351,12 @@ local function tick(profile, dt: number)
 					gain += extra
 					table.insert(plan, { food = other, def = otherDef, gain = extra, worth = worth })
 				end
+			end
+			-- Sin lo temporal habría arrancado min(raw / boost, lo que cabe): con los mismos topes, que con
+			-- colonias grandes mandan y el frenesí apenas añade nada
+			local baseFrac = if gain > 0 then math.min(raw / boost, gain) / gain else 1
+			for i = first, #plan do
+				plan[i].baseFrac = baseFrac
 			end
 		end
 		local gardenScale = 1
@@ -365,7 +375,9 @@ local function tick(profile, dt: number)
 				local piece = FoodService.pieceValue(food, def, stats) -- antes de dañarla: puede desaparecer
 				local taken, _, finished = FoodService.damage(food, whole)
 				if taken > 0 then
-					credited += Profiles.addFood(profile, taken * piece * (item.worth or 1))
+					local got = Profiles.addFood(profile, taken * piece * (item.worth or 1))
+					credited += got
+					creditedBase += got * (item.baseFrac or 1)
 					Profiles.trackFood(profile, def, taken)
 					Events.fire("Ate", profile, def, taken, true)
 				end
@@ -378,8 +390,12 @@ local function tick(profile, dt: number)
 	end
 	profile.remainders = remainders
 
-	-- Media móvil del ingreso: es lo que rinde la colonia cuando no estás
+	-- Media móvil del ingreso. La base es la de normal (sin frenesí, ratos x2, poción ni hongo): con ella
+	-- se pagan el progreso sin conexión, los sacos, las misiones y los regalos, que si no se inflaban
+	-- saliendo justo al acabar un frenesí. La poción o el hongo se quitan aquí: addFood los aplica al final.
 	data.rate = data.rate * 0.95 + (credited / dt) * 0.05
+	local buff = if Workspace:GetServerTimeNow() < profile.buffUntil then Config.Fungus.Mult else 1
+	data.baseRate = Profiles.baseRate(profile) * 0.95 + (creditedBase / dt / buff) * 0.05
 
 	-- La reina cría sola, gastando como mucho una décima de lo que tienes por obrera
 	if stats.queen then

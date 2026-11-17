@@ -392,7 +392,7 @@ local function awardGift(profile, id: number)
 	local zoneFood = Config.Foods[(stats.depth - 1) * 3 + 1] or Config.Foods[1]
 	-- A tu nivel: lo que trae tu colonia en Seconds s o FloorBites mordiscos tuyos (lo que sea más)
 	local raw = math.max(
-		data.rate * G.Gift.Seconds / math.max(stats.foodMult, 1e-3),
+		Profiles.baseRate(profile) * G.Gift.Seconds / math.max(stats.foodMult, 1e-3),
 		G.Gift.FloorBites * stats.biteDamage * zoneFood.value
 	)
 	local credited = Profiles.addFood(profile, raw)

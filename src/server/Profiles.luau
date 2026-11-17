@@ -74,7 +74,7 @@ function Profiles.push(profile)
 	player:SetAttribute("FrenzyReadyAt", profile.frenzyReadyAt)
 	player:SetAttribute("BuffUntil", profile.buffUntil)
 	-- Comida por segundo de la colonia (la ficha de la tienda la usa para hablar con tus números)
-	player:SetAttribute("Rate", math.floor((data.rate or 0) * 10) / 10)
+	player:SetAttribute("Rate", math.floor(Profiles.baseRate(profile) * 10) / 10)
 
 	local hill = profile.hill
 	if hill then
@@ -220,6 +220,14 @@ function Profiles.refresh(profile)
 			warn("[CRUNCH!] Profiles.onRefresh:", err)
 		end
 	end
+end
+
+-- Lo que rinde la colonia de normal (comida por segundo, con el multiplicador de comida pero sin
+-- frenesí ni potenciadores temporales). Las partidas de antes no tienen baseRate: vale su rate.
+function Profiles.baseRate(profile): number
+	local data = profile.data
+	local base = data.baseRate
+	return if type(base) == "number" and base == base and base >= 0 then base else math.max(data.rate or 0, 0)
 end
 
 -- Suma comida aplicando los multiplicadores. Devuelve lo acreditado.

@@ -85,7 +85,8 @@ Config.Run = { Mult = 1.35 } -- correr: de serie, mientras mantienes Shift (o el
 Config.Sprint = { Mult = 2.3, Duration = 3, Cooldown = 12, StaminaStep = 4 } -- turbo: la mejora del árbol
 -- Vuelo corto, por nivel: LandingStep s menos de espera y LandingSpeed más de velocidad al andar
 Config.Wings = { FlightTime = 1.4, Cooldown = 12, LandingStep = 1.5, LandingSpeed = 0.08 }
-Config.Frenzy = { Mult = 3, Duration = 20, Cooldown = 90, LenStep = 8, HiveStep = 15 } -- LenStep: Frenesí largo; HiveStep: Mente colmena
+-- MinCooldown: con 30, el nivel 5 de Mente colmena no hacía nada (el 4 ya llegaba)
+Config.Frenzy = { Mult = 3, Duration = 20, Cooldown = 90, LenStep = 8, HiveStep = 15, MinCooldown = 25 } -- LenStep: Frenesí largo; HiveStep: Mente colmena
 -- Cada mordisco seguido suma un 3 %. Typical: racha media que cuenta para la carga (se pierde al caminar)
 Config.Combo = { Step = 0.03, Window = 1.6, Typical = 8 }
 -- Huevo dorado: cada Interval s (IntervalStep menos por nivel, nunca menos de MinInterval) vale Seconds
@@ -118,6 +119,14 @@ Config.Rebirth = {
 	TartaMult = 2, -- comerse la tarta entera duplica la jalea de esa partida
 	StartWorkers = 15, -- Nido heredado: obreras por nivel (antes 5; casi no se notaba)
 	SpeedStep = 0.15, -- Patas reales: velocidad por nivel (antes 0.08)
+	-- Árbol Real: lo que da cada nivel se SUMA (antes Mandíbulas reales x2 y Linaje fuerte x1,5 por nivel
+	-- multiplicaban sin techo y la segunda partida duraba segundos). Néctar real sí multiplica, pero poco
+	-- y con un precio que crece: es el gasto de jalea que no se acaba. Calibrado con tools/sim.py
+	-- (enjambrar en la capa 7: la segunda vuelta, un 40-60 % más rápida).
+	FoodStep = 0.12, -- Jalea nutritiva: comida +12 % por nivel
+	BiteStep = 0.12, -- Mandíbulas reales: lo que rinde cada trozo +12 % por nivel
+	ColonyStep = 0.12, -- Linaje fuerte: colonia +12 % por nivel
+	NectarStep = 0.02, -- Néctar real: comida x1,02 por nivel, sin tope
 }
 
 Config.Offline = {
@@ -260,7 +269,9 @@ Config.FoodCurve = {
 	Bites = { 6, 18, 55 },
 	SlotValue = { 1, 1.3, 1.7 },
 	-- Rebajado desde la zona 3 con los hormigueros de zona (viajes cortos): antes 4.4, 15.5, 36, 61, 670, 1300, 2100, 3600, 11000, 1.2e5, 5.2e5, 8e5
-	ZoneValues = { 1, 2.4, 3.6, 11.6, 26, 45, 560, 1010, 1520, 2640, 7380, 1.01e5, 3.44e5, 5.29e5 },
+	-- Zonas 7-14 al 80 % (2026-11): con la abeja y el tirachinas entregando en el hormiguero de zona y el
+	-- simulador ya fiel, esas capas bajaban de 20 min (tools/sim.py)
+	ZoneValues = { 1, 2.4, 3.6, 11.6, 26, 45, 448, 808, 1216, 2112, 5904, 80800, 275200, 423200 },
 	Press = { 1, 1.3, 2.1, 2.5, 2.5, 2.4, 3.2, 3.6, 3.8, 3.9, 3.7, 4, 4.2, 4.2 },
 	HardPress = { 1, 1, 1.4, 1.5, 1.5, 1.8, 1.8, 2.8, 3.5, 4.5, 5.1, 5.1, 7, 5.6 },
 	BossHp = 20,
@@ -437,7 +448,7 @@ Config.Tree = {
 	node("area", "M", 5, 1, { name = "Mordida en área", desc = "Tu mordisco alcanza también la comida cercana.", max = 3, cost = 40, growth = 8, parent = "reach" }),
 	node("brutal", "M", 6, 1, { name = "Mordisco brutal", desc = "La mordida doble pega todavía más.", max = 5, cost = 40, growth = 5, parent = "area", icon = "crit" }),
 	node("venom", "M", 8, 1, { name = "Saliva ácida", desc = "La comida dura se deshace: la muerdes mucho más rápido.", max = 5, cost = 40, growth = 5, parent = "brutal", icon = "saw", yield = 0.06 }),
-	node("titan", "M", 8, 2, { name = "Mandíbula titán", desc = "Tu mordida pega y rinde bastante más.", max = 5, cost = 50, growth = 8, parent = "venom", icon = "saw" }),
+	node("titan", "M", 8, 2, { name = "Mandíbula titán", desc = "Cada trozo que arrancas rinde bastante más.", max = 5, cost = 50, growth = 8, parent = "venom", icon = "saw" }),
 	node("chain", "M", 3, 2, { name = "Mordida en cadena", desc = "Al terminar una comida, un rayo salta a la de al lado y le arranca un trozo. Y otra vez.", max = 5, cost = 50, growth = 5, parent = "combo", icon = "crit" }),
 	-- Mejoras que cambian cómo juegas (Config.Extras, módulos Extras del servidor y del cliente)
 	node("charged", "M", 4, 2, { name = "Mordisco cargado", desc = "Quédate quieta junto a la comida sin morder: tus mandíbulas se cargan y el siguiente mordisco arranca un pedazo enorme.", max = 3, cost = 45, growth = 6, parent = "reach", icon = "royalBite" }),
@@ -453,7 +464,7 @@ Config.Tree = {
 	node("fullLoad", "P", 5, 1, { name = "Entrega llena", desc = "Si entregas con la carga llena, la entrega vale más. No da más carga.", max = 5, cost = 40, growth = 5, parent = "landing", icon = "anthill" }),
 	node("giant", "P", 7, 1, { name = "Hormiga gigante", desc = "Creces. Y cargas más.", max = 3, cost = 60, growth = 15, parent = "fullLoad", icon = "carry", yield = 0.06 }),
 	node("tunnel", "P", 2, 3, { name = "Túnel exprés", desc = "Un agujero junto a tu hormiguero que sale a la entrada de cada zona abierta. Y vuelta.", max = 1, cost = 40, growth = 1, parent = "stamina", icon = "anthill", hint = "Mi túnel está delante del hormiguero, junto al cartel", key = "B", button = "Túnel" }),
-	node("buche", "P", 6, 1, { name = "Buche", desc = "Un segundo estómago: al entregar te guardas parte de la carga y sales con ella para el siguiente viaje.", max = 5, cost = 45, growth = 5, parent = "fullLoad", icon = "royalFood" }),
+	node("buche", "P", 6, 1, { name = "Buche", desc = "Un segundo estómago: al entregar cobras la carga entera y además sales con una copia de parte de ella para el siguiente viaje.", max = 5, cost = 45, growth = 5, parent = "fullLoad", icon = "royalFood" }),
 	node("double", "P", 9, 1, { name = "Reparto doble", desc = "A veces una entrega vale el doble.", max = 5, cost = 40, growth = 5, parent = "giant", icon = "anthill" }),
 
 	-- Colonia
@@ -648,7 +659,7 @@ Config.MiniTune = {
 		nugget = { name = "Pepita segura", icon = "queen", base = 250, step = -25, text = "Cada {v} mordiscos, uno vale como dorado" },
 		clover = { name = "Trébol", icon = "smart", base = 1, step = 0.3, text = "Un {v} % de tus mordiscos deja un regalo de 2 mordiscos más" },
 		pureGold = { name = "Oro puro", icon = "royalFood", base = 12, step = 1, text = "Tus mordiscos dorados valen x{v} en vez de x10" },
-		party = { name = "Olor a fiesta", icon = "trail", base = 2, step = 0.5, text = "Cada entrega tuya hace trabajar a la colonia el doble {v} s" },
+		party = { name = "Olor a fiesta", icon = "trail", base = 2, step = 0.5, text = "Al entregar, la colonia trabaja el doble {v} s (como mucho cada 20 s)" },
 		fever = { name = "Fiebre del oro", icon = "queen", base = 1, step = 0.2, int = true, text = "Tras un mordisco dorado, los {v} siguientes también valen como dorados", one = "Tras un mordisco dorado, el siguiente también vale como dorado" },
 		frenzyBite = { name = "Frenesí contagioso", icon = "frenzy", base = 1.5, step = 0.25, text = "Durante el frenesí tú también muerdes x{v}" },
 	},
@@ -665,6 +676,7 @@ Config.MiniTune = {
 		PantryCap = 30, -- segundos de colonia
 		CradleEvery = 300,
 		RushEvery = 240,
+		PartyEvery = 20, -- Olor a fiesta: como mucho una vez cada tanto (con viajes de 2-4 s era x2 siempre)
 		WakeAway = 600, -- segundos fuera para Despertador y la comida doble de Madrugadora al entrar
 		CloverBites = 2,
 		CueGap = 2.5, -- segundos mínimos entre dos avisos de la misma regla
@@ -840,15 +852,19 @@ table.sort(Config.MinisByCost, function(a, b)
 	return a.index < b.index
 end)
 
--- Árbol Real: se paga con Jalea y nunca se pierde. costo = cost + step * nivel.
+-- Árbol Real: se paga con Jalea y nunca se pierde. costo = cost * growth ^ nivel (cada nivel cuesta
+-- `growth` veces el anterior: la jalea de más rinde cada vez menos y el árbol no se llena en dos vueltas).
+-- Lo que da cada nivel: Config.Rebirth (FoodStep, BiteStep, ColonyStep, NectarStep, StartWorkers...).
 Config.Royal = {
-	{ id = "royalFood", name = "Jalea nutritiva", desc = "Toda la comida vale más.", max = 20, cost = 1, step = 1 },
-	{ id = "royalBite", name = "Mandíbulas reales", desc = "Tu mordida se duplica.", max = 10, cost = 3, step = 3 },
-	{ id = "royalColony", name = "Linaje fuerte", desc = "La colonia entera trabaja más rápido.", max = 10, cost = 3, step = 3 },
-	{ id = "royalStart", name = "Nido heredado", desc = "Empiezas cada partida con obreras.", max = 10, cost = 2, step = 2, yield = 0.05 },
-	{ id = "royalSpeed", name = "Patas reales", desc = "Caminas más rápido para siempre.", max = 5, cost = 2, step = 1, yield = 0.05 },
-	{ id = "royalDepth", name = "Planos del nido", desc = "Empiezas cada partida con capas ya excavadas.", max = 7, cost = 4, step = 4, icon = "anthill", yield = 0.06 },
-	{ id = "royalJelly", name = "Jalea espesa", desc = "Ganas más jalea al enjambrar.", max = 10, cost = 2, step = 2, icon = "royalFood", yield = 0.05 },
+	{ id = "royalFood", name = "Jalea nutritiva", desc = "Toda la comida vale un poco más.", max = 10, cost = 2, growth = 3 },
+	{ id = "royalBite", name = "Mandíbulas reales", desc = "Cada trozo que arrancas rinde un poco más.", max = 10, cost = 3, growth = 3 },
+	{ id = "royalColony", name = "Linaje fuerte", desc = "La colonia entera trabaja un poco más rápido.", max = 10, cost = 3, growth = 3 },
+	{ id = "royalStart", name = "Nido heredado", desc = "Empiezas cada partida con obreras.", max = 10, cost = 3, growth = 3, yield = 0.05 },
+	{ id = "royalSpeed", name = "Patas reales", desc = "Caminas más rápido para siempre.", max = 5, cost = 4, growth = 3, yield = 0.05 },
+	{ id = "royalDepth", name = "Planos del nido", desc = "Empiezas cada partida con capas ya excavadas.", max = 7, cost = 20, growth = 3.5, icon = "anthill", yield = 0.06 },
+	{ id = "royalJelly", name = "Jalea espesa", desc = "Ganas más jalea al enjambrar.", max = 10, cost = 5, growth = 3, icon = "royalFood", yield = 0.05 },
+	-- Sin tope de verdad: siempre hay algo en qué gastar la jalea (también la comprada)
+	{ id = "royalNectar", name = "Néctar real", desc = "Toda la comida vale un 2 % más por nivel. No se acaba nunca.", max = 999, cost = 25, growth = 1.4, icon = "royalFood" },
 }
 
 -- Vestidor: se paga con comida y es para siempre, también tras enjambrar.

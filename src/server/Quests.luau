@@ -220,7 +220,7 @@ local function eligible(profile, kind: string): boolean
 	if kind == "golden" then
 		return recentGolden(data.quests) > 0
 	elseif kind == "workers" then
-		return data.workers > 0 and data.rate * EFFORT[1] >= 5
+		return data.workers > 0 and Profiles.baseRate(profile) * EFFORT[1] >= 5
 	elseif kind == "buy" then
 		return canBuyMore(profile)
 	end
@@ -263,7 +263,7 @@ local function build(profile, kind: string, tier: number)
 	elseif kind == "golden" then
 		mission.goal = math.clamp(recentGolden(data.quests), 1, tier)
 	elseif kind == "workers" then
-		mission.goal = nice(data.rate * effort)
+		mission.goal = nice(Profiles.baseRate(profile) * effort)
 	elseif kind == "earn" then
 		-- Comida entregada a mano en el hormiguero, medida con la comida de tu zona
 		local def = pickFood(stats) or Config.Foods[1]
@@ -418,8 +418,8 @@ local function rawFood(profile, seconds: number): number
 	local stats = profile.stats
 	local depth = math.clamp(stats.depth, 1, #Config.Zones)
 	local zoneFood = Config.Foods[(depth - 1) * 3 + 1]
-	-- data.rate ya lleva el multiplicador de comida y addFood lo vuelve a aplicar: se quita aquí
-	local colony = profile.data.rate / math.max(stats.foodMult, 1e-3) * seconds
+	-- La tasa base ya lleva el multiplicador de comida y addFood lo vuelve a aplicar: se quita aquí
+	local colony = Profiles.baseRate(profile) / math.max(stats.foodMult, 1e-3) * seconds
 	-- Lo que rinde jugar a mano en la zona de tu capa (sin multiplicadores: addFood los pone)
 	local hand = seconds * eatRate(stats, zoneFood) * zoneFood.value
 	return math.max(math.floor(colony), math.floor(hand))

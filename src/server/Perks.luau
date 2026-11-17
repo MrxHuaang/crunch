@@ -129,9 +129,10 @@ local function addCredited(profile, amount: number)
 	data.totalFood += amount
 end
 
--- Comida de la colonia: data.rate ya lleva el multiplicador de comida
+-- Comida de la colonia: la tasa base ya lleva el multiplicador de comida, pero no el frenesí ni los
+-- ratos de doble (si no, Turno doble y Olor a fiesta se alimentaban el uno al otro)
 local function colonySeconds(profile, seconds: number): number
-	return profile.data.rate * seconds
+	return Profiles.baseRate(profile) * seconds
 end
 
 -- Lo dorado de un mordisco: Pepita segura y Fiebre del oro lo suman a tu carga (Oro puro lo sube)
@@ -345,8 +346,9 @@ local function onDeposit(profile, credited: number, _full: boolean?)
 		extra += bonus
 	end
 
-	-- Olor a fiesta: la colonia trabaja el doble un rato
-	if level(profile, "party") > 0 then
+	-- Olor a fiesta: la colonia trabaja el doble un rato, como mucho una vez cada PartyEvery s
+	if level(profile, "party") > 0 and now >= (s.partyAt or 0) then
+		s.partyAt = now + RULES.PartyEvery
 		s.boostUntil = math.max(s.boostUntil, now + value(profile, "party"))
 	end
 
@@ -487,6 +489,8 @@ local function tickProfile(player: Player, profile, now: number)
 			factor *= 2
 		end
 	end
+	-- Lo temporal, aparte: la tasa base de la colonia (Colony) lo quita para los premios
+	stats.perkBoost = if workers > 0 and now < s.boostUntil then 2 else 1
 	local current = stats.perkColony or 1
 	if math.abs(current - factor) > 1e-9 then
 		stats.colonyMult *= factor / current

@@ -92,7 +92,7 @@ SLOT_VALUE = [1, 1.3, 1.7]    # Config.FoodCurve.SlotValue
 # Config.FoodCurve.ZoneValues: lo que vale un trozo de la comida pequeña de cada zona. Ajustado con
 # este simulador para que cada capa dure unos 30 min jugando activo (las capas 12 y 13 no abren
 # mejoras nuevas: su comida tiene que valer mucho más para no estancarse).
-ZONE_VALUES = [1, 2.4, 3.6, 11.6, 26, 45, 560, 1010, 1520, 2640, 7380, 1.01e5, 3.44e5, 5.29e5]  # Config.FoodCurve.ZoneValues (rebajado con los hormigueros de zona)
+ZONE_VALUES = [1, 2.4, 3.6, 11.6, 26, 45, 448, 808, 1216, 2112, 5904, 80800, 275200, 423200]  # Config.FoodCurve.ZoneValues (zonas 7-14 al 80 %)
 if os.environ.get("VALUE_FIX"):
     ZONE_VALUES = [v * float(x) for v, x in zip(ZONE_VALUES, os.environ["VALUE_FIX"].split(","))]
 BOSS_HP = 20                  # Config.FoodCurve.BossHp (la tarta)
@@ -260,6 +260,7 @@ LENS = dict(Interval=20, Step=2, Mult=20, MultStep=8)
 MEGA = dict(Every=15, Step=2, Mult=15, MultStep=5)
 JAW = (0.6, 0.2)
 FRENZY_LEN, FRENZY_HIVE = 8, 15  # Config.Frenzy.LenStep y HiveStep
+FRENZY_MIN_CD = 25               # Config.Frenzy.MinCooldown
 CHAIN_TYPICAL = 8   # Config.Chain.Typical: mordiscos de una comida típica (para contar la cadena en la carga)
 CHARGED = (2.2, 0.6)
 RAIN = dict(Cooldown=45, Step=3, Count=16, CountStep=6, Bites=6)
@@ -329,6 +330,14 @@ PERKS = dict(
 )
 INT_PERKS = {"fever", "cradle"}
 DEP_STACKS = 3
+LAST_SHARE = 0.025    # Config.MiniTune.PerkRules.LastShare (Última miga)
+STEPS = 1000          # PerkRules.Steps (Cuentapasos)
+RUSH_EVERY = 240      # PerkRules.RushEvery (Hora punta)
+PARTY_EVERY = 20      # PerkRules.PartyEvery (Olor a fiesta: como mucho una vez cada tanto)
+FUNGI = 3             # Nest.luau updateFungi: tres hongos, cada uno rebrota a los Config.Fungus.Regrow s
+# Reglas sin simular (efecto pequeño o fuera del bucle): Despensa viva (el simulador gasta la comida en cuanto
+# llega, apenas hay comida guardada), Cuna rápida (obreras gratis cada 5 min: ahorra obreras baratas) y
+# Despertador / Madrugadora al entrar (el simulador no tiene sesiones; Madrugadora al excavar sí cuenta)
 
 
 def level_damage(bite_lvl):
@@ -378,18 +387,62 @@ for layer in range(1, LAYERS + 1):
                 m.update(kind=kind, amount=amount)
             minis.append(m)
 
-ROYAL = dict(royalFood=(20, 1, 1), royalBite=(10, 3, 3), royalColony=(10, 3, 3), royalStart=(10, 2, 2),
-             royalSpeed=(5, 2, 1), royalDepth=(7, 4, 4), royalJelly=(10, 2, 2))
+# Config.Royal: (max, cost, growth). Precio del nivel n = round(cost * growth^n) (Stats.royalCost)
+ROYAL = dict(royalFood=(10, 2, 3), royalBite=(10, 3, 3), royalColony=(10, 3, 3), royalStart=(10, 3, 3),
+             royalSpeed=(5, 4, 3), royalDepth=(7, 20, 3.5), royalJelly=(10, 5, 3), royalNectar=(999, 25, 1.4))
+# Config.Rebirth: lo que da cada nivel (sumado, no multiplicado): comida, mordida y colonia; Néctar real
+# (sin tope) multiplica la comida por (1 + NECTAR) en cada nivel
+ROYAL_FOOD = env("ROYAL_FOOD", 0.12)      # Config.Rebirth.FoodStep
+ROYAL_BITE = env("ROYAL_BITE", 0.12)      # Config.Rebirth.BiteStep
+ROYAL_COLONY = env("ROYAL_COLONY", 0.12)  # Config.Rebirth.ColonyStep
+ROYAL_NECTAR = env("ROYAL_NECTAR", 0.02)  # Config.Rebirth.NectarStep
+
+
+def royal_cost(k, level):
+    mx, cost, growth = ROYAL[k]
+    return max(1, math.floor(cost * growth ** level + 0.5))  # Stats.royalCost
 REBIRTH_DIV, REBIRTH_POW = 3e12, 2
+JELLY_STEP = 0.15     # Stats.luau jellyMult: Jalea espesa, +15 % de jalea por nivel
+START_WORKERS = 15    # Config.Rebirth.StartWorkers: Nido heredado, obreras por nivel
+GIFT_JELLY = 0.25     # Config.Garden.Gift.JellyChance: tras enjambrar, cada regalo del jardín puede dar 1 de jalea
+# Objetivo de DISENO.md: la segunda partida dura cerca de la mitad que la primera; la tercera, menos
+REB_GAIN2 = (0.40, 0.60)  # enjambrando en la capa 7 (el primer enjambre): la segunda vuelta, un 40-60 % más rápida
+REB_GAIN2_DEEP = 0.80     # enjambrando más hondo (8 y 9) da más jalea y vale más, pero no más de un 80 %
+REB_FLOOR3 = 0.15         # la tercera, más rápida que la segunda pero no por debajo del 15 % del tiempo de la primera
+CASUAL_MARKED = 0.5       # casual, capas 2-4 sin Rastro listo: parte del tiempo con rastro marcado
 
 
 def jelly_for(run_food, mult=1.0):
+    # Stats.jellyFor. La Tarta x2 (Shop.jellyNow) solo si se comió: el simulador no la come (capas 7-9 no la tienen)
     return int(math.log10(max(run_food / REBIRTH_DIV, 1)) ** REBIRTH_POW * mult)
+
+
+def nursery_for(count):
+    # Stats.nurseryFor: primer nivel de guardería en el que caben `count` obreras
+    return next((i + 1 for i, c in enumerate(CAPS) if c >= count), len(CAPS))
+
+
+# Mascotas (src/shared/PetDefs.luau, src/server/PetService.luau applyPets): multiplican foodMult, colonyMult,
+# biteDamage (después de calcular la carga) y jellyMult, con tope x4 por estadística. Se quedan al enjambrar.
+#   PETS=tipicas: compra PET_EGGS huevos de cada capa con su comida y equipa 3 de esa capa (1 épica, 2 raras)
+#   PETS=tope:    x4 en todo desde el principio
+PETS = os.environ.get("PETS") or None
+PET_EGG_BASE, PET_EGG_G = 600, 1.12              # PetDefs.EggBase, EggGrowth
+PET_BASE, PET_LAYER_G, PET_MAX = 0.25 / 3, 0.15, 4  # PetDefs.BaseBonus, LayerGrowth, MaxMult
+PET_RARITY = dict(rara=2, epica=3.5)             # PetDefs.Rarities mult
+PET_WEIGHT = dict(food=1, colony=1.3, bite=1.5, jelly=0.5)  # PetDefs.Bonuses weight
+PET_EGGS = 6  # ~2,4 raras o mejores por capa (PetDefs.Rarities: 40 % rara o más)
+PET_TYPICAL = (("food", "epica"), ("colony", "rara"), ("bite", "rara"))
+
+
+def egg_price(layer, bought):
+    # PetDefs.eggPrice
+    return math.floor(PET_EGG_BASE * STAGE ** (layer - 1) * K * PET_EGG_G ** bought)
 
 
 # ═══════════════════════════ Estado y estadísticas ═══════════════════════════
 class Game:
-    def __init__(self, active, royal=None):
+    def __init__(self, active, royal=None, trophies=0, pets=PETS):
         self.active = active
         self.royal = dict(royal or {})
         self.L = {k: 0 for k in N}
@@ -400,11 +453,37 @@ class Game:
         self.cheap = 1.0
         self.owned = set()
         self.depth = 1 + self.royal.get("royalDepth", 0)
-        self.workers = 15 * self.royal.get("royalStart", 0)  # Config.Rebirth.StartWorkers
+        self.workers = START_WORKERS * self.royal.get("royalStart", 0)
+        if self.workers:
+            self.L["nursery"] = nursery_for(self.workers)  # Shop.resetRun: y la guardería justa para que quepan
+        self.trophies0 = trophies  # los trofeos no se pierden al enjambrar (Data.luau trophies; Shop.resetRun no los toca)
+        self.pets, self.pet_layer, self.eggs = pets, 0, {}
+        self.gift_jelly = 0.0
         self.food = 0.0
         self.prized = bool(self.royal)
         self.t = 0.0
         self.run = 0.0
+
+    def trophies(self):
+        return min(max(3 * self.depth, self.trophies0), 42)
+
+    def pet_mults(self):
+        if self.pets == "tope":
+            return dict(food=PET_MAX, colony=PET_MAX, bite=PET_MAX, jelly=PET_MAX)
+        m = dict(food=1.0, colony=1.0, bite=1.0, jelly=1.0)
+        if self.pets == "tipicas" and self.pet_layer:
+            for kind, rarity in PET_TYPICAL:  # PetDefs.power y PetDefs.totals
+                m[kind] = min(PET_MAX, m[kind] + PET_BASE * PET_RARITY[rarity] * (1 + PET_LAYER_G * (self.pet_layer - 1)) * PET_WEIGHT[kind])
+        return m
+
+    def jelly(self):
+        # Shop.jellyNow con stats.jellyMult (Stats.luau): Jalea espesa, galerías de jalea y mascotas
+        mult = (1 + JELLY_STEP * self.royal.get("royalJelly", 0)) * (1 + self.T["jelly"]) * self.pet_mults()["jelly"]
+        return jelly_for(self.run, mult)
+
+    def zm(self, zone):
+        # Paladar fino (Stats.derive zoneMult): la comida de la zona de tu capa vale más
+        return 1 + self.pv("palate") / 100 if zone == self.depth else 1
 
     # Stats.derive
     def pv(self, pid):
@@ -417,14 +496,14 @@ class Game:
     def stats(self):
         L, T = self.L, self.T
         rb = self.royal.get("royalBite", 0)
-        power = BITE_POWER ** L["bite"] * MS_MULT ** ms(L["bite"]) * TITAN ** L["titan"] * 2 ** rb
+        power = BITE_POWER ** L["bite"] * MS_MULT ** ms(L["bite"]) * TITAN ** L["titan"] * (1 + ROYAL_BITE * rb)
         lvl_dmg = BITE_BASE * (BITE_POWER ** L["bite"] * MS_MULT ** ms(L["bite"])) ** BITE_SPLIT
         dmg = round(lvl_dmg + T["bite"])
         dmg = max(dmg, 1)
         cd_raw = BITE_CD * CHEW_STEP ** L["chew"] / (1 + T["chew"])
         cd = max(MIN_CD, cd_raw)
         chew_yield = MIN_CD / cd_raw if cd_raw < MIN_CD else 1
-        yield_ = (BITE_POWER ** L["bite"] * MS_MULT ** ms(L["bite"])) ** (1 - BITE_SPLIT) * TITAN ** L["titan"] * 2 ** rb
+        yield_ = (BITE_POWER ** L["bite"] * MS_MULT ** ms(L["bite"])) ** (1 - BITE_SPLIT) * TITAN ** L["titan"] * (1 + ROYAL_BITE * rb)
         yield_ *= chew_yield
         yield_ *= (self.neighbors() / min(self.neighbors(), NEIGHBOR_CAP)) ** NEIGHBOR_YIELD
         for k, y in NODE_YIELD.items():
@@ -437,11 +516,12 @@ class Game:
         own = max(math.floor((level_capacity(L["carry"]) + T["carry"])
                              * dmg_ratio * GIANT_CARRY ** L["giant"]), MIN_LOAD * dmg * self.harvest())
         cap = math.floor(own * (1 + BEETLE * L["beetle"]))
-        trophies = min(3 * self.depth, 42)
-        food_mult = (1 + 0.5 * self.royal.get("royalFood", 0)) * yield_ * (1 + TROPHY * trophies)
+        pm = self.pet_mults()
+        food_mult = (1 + ROYAL_FOOD * self.royal.get("royalFood", 0)) * (1 + ROYAL_NECTAR) ** self.royal.get("royalNectar", 0) * yield_ * (1 + TROPHY * self.trophies()) * pm["food"]
         raw_sp = (WALK + SPEED_STEP * (L["speed"] + T["speed"])) * (1 + 0.15 * self.royal.get("royalSpeed", 0)) * (1 + LANDING_SPEED * L["landing"])
         sp = min(raw_sp, MAX_WALK)
         food_mult *= (raw_sp / sp) ** SPEED_YIELD  # lo que pasa del techo rinde comida (Stats.derive)
+        dmg *= pm["bite"]  # PetService.applyPets: biteDamage después de Stats.derive (la carga no cambia)
         return dict(power=power, dmg=dmg, cd=cd, own=own, cap=cap, food_mult=food_mult, speed=sp, raw_speed=raw_sp,
                     yield_=yield_, lvl_dmg=lvl_dmg)
 
@@ -487,7 +567,8 @@ class Game:
 
     def frenzy_share(self):
         L, T = self.L, self.T
-        return (20 + FRENZY_LEN * L["frenzyLen"] + T["frenzyLen"]) / max(30, 90 - FRENZY_HIVE * L["hive"] - T["frenzyCd"])
+        # Como mucho todo el tiempo: el frenesí gratis no se apila sobre otro (Colony.onFrenzy)
+        return min(1.0, (20 + FRENZY_LEN * L["frenzyLen"] + T["frenzyLen"]) / max(FRENZY_MIN_CD, 90 - FRENZY_HIVE * L["hive"] - T["frenzyCd"]))
 
     def gold_food(self, f):
         if f["boss"]:
@@ -548,7 +629,13 @@ class Game:
             bites += pieces / harvest
             foods_eaten += eaten_here
             self.mean_crit = crit * combo
-            value += pieces * f["v"] * self.gold_food(f) if extras else pieces * f["v"]
+            piece = f["v"] * self.gold_food(f) * self.zm(zone) if extras else f["v"]
+            value += pieces * piece
+            if extras:
+                # Última miga y Botín (Perks.luau onFinished): el último bocado y las comidas grandes terminadas
+                value += eaten_here * min(f["hp"] / per_food, f["hp"] * LAST_SHARE) * piece * max(0, self.pv("lastBite") - 1)
+                if f["slot"] == 2:
+                    value += eaten_here * f["hp"] * piece * self.pv("loot") / 100
             bites_per_food[f["slot"]] = per_food
         # Mordisco cargado: en comida grande parte del tiempo carga y pega Mult veces
         if L["charged"]:
@@ -606,17 +693,19 @@ class Game:
         covered = 0.0
         if allies and L["bee"]:
             bspeed = BEE["Speed"] + BEE["SpeedStep"] * (L["bee"] - 1)
-            btrip = 2 * max(dist(zone) / bspeed, 1.6) + 0.75  # la abeja vuela a casa (Allies), no al hormiguero de zona
+            btrip = 2 * max(d0 / bspeed, 1.6) + 0.75  # vuela al hormiguero más cercano: el de la zona (Allies.dropPoint)
             interval = max(6, max(BEE["Min"], round(BEE["Interval"] - BEE["Step"] * (L["bee"] - 1))) - T["bee"])
             wait = btrip if L["bee"] >= BEE["Full"] else max(btrip, interval)
             covered = (work + walk) / wait
-        if allies and L["sling"] and dist(zone) <= SLING["Range"] + SLING["RangeStep"] * (L["sling"] - 1):
+        if allies and L["sling"] and d0 <= SLING["Range"] + SLING["RangeStep"] * (L["sling"] - 1):  # al de la zona (Allies.dropPoint)
             covered += (work + walk) / (SLING["Cooldown"] - SLING["Step"] * (L["sling"] - 1))
         covered = min(covered, 0.95)
         tm = work + walk * (1 - covered)
         normal = cap / (dmg * self.harvest())
+        # Pasos de un viaje (Cuentapasos): ida y vuelta más los saltos entre comidas y racimos
+        studs = 2 * d0 * (1 - covered) + foods_eaten * max(1.0, FOOD_HOP - 1.5 * L["reach"] - T["reach"]) + max(0, foods_eaten / FOODS_PER_CLUSTER - 1) * CLUSTER_HOP
         return dict(time=tm, walk=walk * (1 - covered), work=work, bites=bites, value=value,
-                    bites_per_food=bites_per_food, trip_bites=normal, presses=bites, zone=zone)
+                    bites_per_food=bites_per_food, trip_bites=normal, presses=bites, zone=zone, studs=studs)
 
     def trip_value(self, st, tr, extras=True):
         L, T = self.L, self.T
@@ -637,13 +726,16 @@ class Game:
             mult *= 1 + (self.pv("starDep") - 1) * min(1, tr["time"] / 300)
         value *= mult
         value += T["deposit"] * st["food_mult"]
+        # Cuentapasos (Perks.luau): cada STEPS pasos, un % de una carga llena de la comida pequeña de tu capa
+        small = foods[(self.depth - 1) * 3]
+        value += tr["studs"] / STEPS * self.pv("pedometer") / 100 * st["cap"] * small["v"] * self.zm(self.depth) * st["food_mult"]
         return value
 
     def bonus(self, st, zone):
         """Comida que llega sin viaje: comida gigante, lluvia propia y lupa (Extras y Aliadas)."""
         L = self.L
         f = foods[(zone - 1) * 3 + 1]
-        v = f["v"] * st["food_mult"]
+        v = f["v"] * st["food_mult"] * self.zm(zone)
         out = 0.0
         if L["giantFood"]:
             g_ = GIANT_FOOD
@@ -668,24 +760,28 @@ class Game:
         return best, bt
 
     # ───────────── Colonia ─────────────
-    def colony(self, st, playing):
+    def colony(self, st, playing, trip_time=None, base=False, marked=True):
+        """Comida por segundo de la colonia. base: sin frenesí, Hora punta ni Olor a fiesta (Profiles.baseRate,
+        la que pagan huevo, Turno doble, regalos y misiones). marked=False: sin rastro marcado."""
         L, T = self.L, self.T
         if self.workers <= 0:
             return 0.0
         wc = (worker_carry_at(L["workerCarry"]) + T["workerCarry"]) * SUPER ** L["super"]
         ws = (WORKER_SPEED + T["workerSpeed"]) * (1 + WORKER_SPEED_STEP * L["workerSpeed"])
-        mult = BARRACKS ** L["barracks"] * LEGION ** L["legion"] * 1.5 ** self.royal.get("royalColony", 0)
+        mult = BARRACKS ** L["barracks"] * LEGION ** L["legion"] * (1 + ROYAL_COLONY * self.royal.get("royalColony", 0))
         mult *= QUEEN_MULT if L["queen"] else 1
-        if L["trail"] and L["smart"]:
-            mult *= SMART_MULT
-        if L["trail"]:
-            mult *= (1 + SWEET * L["sweet"]) * (1 + T["trail"])
-        if L["frenzy"]:
+        mult *= self.pet_mults()["colony"]  # PetService.applyPets: colonyMult
+        # Sin rastro marcado las obreras van solas al jardín (Colony.luau autoFoods)
+        trail = L["trail"] if marked else 0
+        if trail:
+            # Feromona dulce, galerías de rastro y Rastro listo: solo con rastro marcado (Colony.luau trailBonus)
+            mult *= (1 + SWEET * L["sweet"]) * (1 + T["trail"]) * (SMART_MULT if L["smart"] else 1)
+        if L["frenzy"] and not base:
             mult *= 1 + (2 + L["royalPher"]) * self.frenzy_share() * playing
         best = 0.0
         caps = []  # (valor por trozo, tope) de cada zona: con varios rastros se trabajan varias zonas
         for z in range(1, self.depth + 1):
-            if z > 1 and L["trail"] == 0:
+            if z > 1 and trail == 0:
                 continue
             zf = [f for f in foods if f["z"] == z and not f["boss"] and (not f["hard"] or L["barracks"])]
             if not zf:
@@ -697,23 +793,24 @@ class Game:
             # las de su racimo (Colony.luau). Tope de la zona: lo que rebrota.
             top = max(zf, key=lambda f: f["v"])
             if z == 1:
-                gs = min(G_MAX, 1 + G_WSTEP * math.log10(1 + (self.workers if L["trail"] == 0 else 0) / G_WREF))
+                gs = min(G_MAX, 1 + G_WSTEP * math.log10(1 + (self.workers if trail == 0 else 0) / G_WREF))
                 regrow = sum(f["count"] * gs * f["hp"] * f["v"] / (BITE_TIME + f["resp"] / min(gs, G_RESP_MAX)) for f in zf) * G_DRAIN
                 cap = AUTO_TARGETS * top["hp"] * top["v"] / BITE_TIME
             else:
                 regrow = sum(f["count"] * f["hp"] * f["v"] / (BITE_TIME + f["resp"]) for f in zf)
-                cap = L["trail"] * COLONY_SPREAD * top["hp"] * top["v"] / BITE_TIME
-            value = min(rate * top["v"], cap, regrow) * self.gold_food(top)
+                cap = trail * COLONY_SPREAD * top["hp"] * top["v"] / BITE_TIME
+            zm = self.zm(z)
+            value = min(rate * top["v"], cap, regrow) * self.gold_food(top) * zm
             best = max(best, value)
             if z > 1:
-                caps.append((top["v"], min(cap, regrow) * self.gold_food(top), rate))
+                caps.append((top["v"] * zm, min(cap, regrow) * self.gold_food(top) * zm, rate))
         # Con más de un rastro, lo que no cabe en la zona más rica va a la siguiente
-        if L["trail"] > 1 and caps:
+        if trail > 1 and caps:
             caps.sort(key=lambda c: -c[0])
             rate = caps[0][2]
             left = rate * caps[0][0]
             total = 0.0
-            for v, cap_z, _ in caps[:L["trail"]]:
+            for v, cap_z, _ in caps[:trail]:
                 take = min(left, cap_z)
                 total += take
                 left = (left - take) * v / caps[0][0]
@@ -723,7 +820,12 @@ class Game:
         col = best * st["food_mult"]
         if self.workers >= self.worker_cap() > 0:
             col *= 1 + self.pv("fullNest") / 100
-        col *= 1 + self.pv("rush") / 240
+        if base:
+            return col
+        # Hora punta (cada RUSH_EVERY s) y Olor a fiesta (tras cada entrega tuya): la colonia trabaja el
+        # doble esos segundos, sin sumarse si coinciden (Perks.luau boostUntil)
+        party = playing * min(1, self.pv("party") / max(trip_time, PARTY_EVERY)) if trip_time else 0
+        col *= 2 - (1 - self.pv("rush") / RUSH_EVERY) * (1 - party)
         return col
 
     # ───────────── Todo junto ─────────────
@@ -736,28 +838,42 @@ class Game:
         full, trf = self.hand(st, allies=True, extras=True)
         helpers = max(0.0, with_allies - base)
         extra_hand = max(0.0, full - with_allies)  # comida dorada, reglas de entrega, buche, etc.
-        col = self.colony(st, f)
         L = self.L
+        trip_time = trf["time"] if trf else None
+        # Casual sin Rastro listo (capas 2-4): solo parte del tiempo hay un rastro marcado (Colony.luau)
+        half = self.active <= 0.45 and 2 <= self.depth <= 4 and L["trail"] and not L["smart"]
+
+        def colony_now(**kw):
+            c = self.colony(st, f, trip_time, **kw)
+            return CASUAL_MARKED * c + (1 - CASUAL_MARKED) * self.colony(st, f, trip_time, marked=False, **kw) if half else c
+        col = colony_now()
+        col_base = colony_now(base=True)  # Profiles.baseRate: sin frenesí, Hora punta ni Olor a fiesta
+        # Turno doble (Perks.luau onDeposit): cada entrega trae segundos de colonia a la tasa base
+        shift = col_base * self.pv("shift") / trip_time * f if trip_time else 0.0
         # Resto: huevos, hongos, sucesos, misiones, castas, social
         rest = 0.0
         if L["eggs"]:
             interval = max(EGG[4] * 0.6, max(EGG[4], EGG[0] - EGG[2] * L["eggs"]) - self.T["eggTime"])
             secs = EGG[1] + EGG[3] * L["eggs"] + self.T["eggValue"]
-            rest += max(col * secs, EGG_FLOOR * st["dmg"] * foods[(self.depth - 1) * 3]["v"] * st["food_mult"]) / interval * f
+            # Nest.luau: segundos de colonia a la tasa base
+            rest += max(col_base * secs, EGG_FLOOR * st["dmg"] * foods[(self.depth - 1) * 3]["v"] * st["food_mult"]) / interval * f
         if L["fungus"]:
-            rest += (full * f + col) * (FUNGUS[1] + FUNGUS[2] * L["fungus"] + self.T["fungus"]) / FUNGUS[0] * f
-        # Sucesos del jardín: un regalo cada ~150 s mientras juegas
+            # Tres hongos (Nest.luau updateFungi); cada uno alarga la comida doble (buffUntil), no se pisan
+            share = min(1, FUNGI * (FUNGUS[1] + FUNGUS[2] * L["fungus"] + self.T["fungus"]) / FUNGUS[0])
+            rest += (full * f + col) * share * f
+        # Sucesos del jardín: un regalo cada ~150 s mientras juegas (Garden.luau awardGift: tasa base)
         zf = foods[(self.depth - 1) * 3]
-        gift = max(col * GARDEN_EVENT[1], GARDEN_EVENT[2] * st["dmg"] * zf["v"] * st["food_mult"])
+        gift = max(col_base * GARDEN_EVENT[1], GARDEN_EVENT[2] * st["dmg"] * zf["v"] * st["food_mult"])
         rest += gift / GARDEN_EVENT[0] * f * 0.5
-        # Misiones: tres huecos a la vez, cada una tarda EFFORT y paga PAY s de tu ingreso a mano
+        # Misiones: tres huecos a la vez, cada una tarda EFFORT y paga PAY s de tu ingreso a mano o de la
+        # colonia a la tasa base (Quests.luau rawFood)
         hand_rate = full
-        quests = sum(p / e for p, e in zip(QUEST_PAY, QUEST_EFFORT)) * QUEST_EFFICIENCY * max(hand_rate, col) * f
+        quests = sum(p / e for p, e in zip(QUEST_PAY, QUEST_EFFORT)) * QUEST_EFFICIENCY * max(hand_rate, col_base) * f
         # Castas: botín al 60 % de unas comidas pequeñas de tu zona cada 20 s
         castes = CASTE_SHARE * CASTE_FOODS * zf["hp"] * zf["v"] * st["food_mult"] / CASTE_EVERY * f if self.depth >= 2 else 0
         social = (SOCIAL_PANTRY * full + SOCIAL_OTHER * full) * f if SOCIAL_ON else 0
         hand_part = base * f
-        parts = dict(mano=hand_part, colonia=col, ayudantes=helpers * f, extra=extra_hand * f, resto=rest,
+        parts = dict(mano=hand_part, colonia=col, ayudantes=helpers * f, extra=extra_hand * f + shift, resto=rest,
                      misiones=quests, castas=castes, social=social)
         total = sum(parts.values())
         return total, parts, tr, st
@@ -790,6 +906,8 @@ class Game:
             opts.append((WORKER_BASE * WORKER_G ** self.workers * self.cheap, "worker"))
         if self.depth < LAYERS:
             opts.append((DIG * STAGE ** (self.depth - 1), "dig"))
+        if self.pets == "tipicas" and self.eggs.get(self.depth, 0) < PET_EGGS:
+            opts.append((egg_price(self.depth, self.eggs.get(self.depth, 0)), "egg"))  # huevo de la capa actual
         for i, m in enumerate(minis):
             if m["id"] not in self.owned and m["L"] <= self.depth and (m["prev"] is None or m["prev"] in self.owned):
                 opts.append((m["cost"], i))
@@ -798,6 +916,10 @@ class Game:
     def apply(self, k):
         if k == "worker":
             self.workers += 1
+        elif k == "egg":
+            self.eggs[self.depth] = self.eggs.get(self.depth, 0) + 1
+            if self.eggs[self.depth] == PET_EGGS:
+                self.pet_layer = self.depth  # equipa las tres de esta capa
         elif k == "dig":
             self.depth += 1
             if self.depth == 2 and not self.royal:
@@ -820,11 +942,12 @@ class Game:
             self.L[k] += 1
 
     def snapshot(self):
-        return (dict(self.L), dict(self.T), dict(self.PL), self.cheap, set(self.owned), self.depth, self.workers)
+        return (dict(self.L), dict(self.T), dict(self.PL), self.cheap, set(self.owned), self.depth, self.workers,
+                dict(self.eggs), self.pet_layer)
 
     def restore(self, s):
-        self.L, self.T, self.PL, self.cheap, self.owned, self.depth, self.workers = (
-            dict(s[0]), dict(s[1]), dict(s[2]), s[3], set(s[4]), s[5], s[6])
+        self.L, self.T, self.PL, self.cheap, self.owned, self.depth, self.workers, self.eggs, self.pet_layer = (
+            dict(s[0]), dict(s[1]), dict(s[2]), s[3], set(s[4]), s[5], s[6], dict(s[7]), s[8])
 
 
 def audit_key(k):
@@ -900,8 +1023,8 @@ def label(k):
 
 
 # ═══════════════════════════ Una partida ═══════════════════════════
-def play(active, royal=None, stop_depth=LAYERS, audit=None, until_all=False):
-    g = Game(active, royal)
+def play(active, royal=None, stop_depth=LAYERS, audit=None, until_all=False, trophies=0, pets=PETS):
+    g = Game(active, royal, trophies, pets)
     layers = {}
     cur = dict(start=0.0, buys=[], parts=None)
     first_buy = first_worker = None
@@ -927,6 +1050,8 @@ def play(active, royal=None, stop_depth=LAYERS, audit=None, until_all=False):
             g.t += dt
             g.run += total * dt
             g.food = c
+            if g.royal:  # regalos del jardín tras enjambrar: a veces 1 de jalea (Garden.luau awardGift)
+                g.gift_jelly += dt * active * 0.5 / GARDEN_EVENT[0] * GIFT_JELLY
             # reparto acumulado de la capa
             acc = cur["parts"] or {key: 0.0 for key in parts}
             for key, v in parts.items():
@@ -953,9 +1078,16 @@ def play(active, royal=None, stop_depth=LAYERS, audit=None, until_all=False):
             cur = dict(start=g.t, buys=[], parts=None)
         g.apply(k)
         if k == "dig":
-            _, _, tr_new, st_new = g.income()
+            total_new, parts_new, tr_new, st_new = g.income()
             entry[g.depth] = g.trip(st_new, g.depth)
             m_entry[g.depth] = metrics(g)
+            # Madrugadora (Perks.luau, suceso Dig): unos minutos de comida doble al excavar (buffUntil, Fungus.Mult)
+            early = total_new * 60 * g.pv("early")
+            if early:
+                g.food += early
+                g.run += early
+                cur["parts"] = {key: 0.0 for key in parts_new}
+                cur["parts"]["resto"] = early
         if g.t > 3600 * 500:
             break
     # Última capa: hasta tenerlo todo comprado
@@ -1095,33 +1227,47 @@ def verify(active_rows, casual_rows, fb_a, fw_a, reb):
         check(r["max_trip"] <= 40, f"capa {L}: viaje de 40 pulsaciones como mucho ({r['max_trip']:.1f})")
         check(r["max_speed"] <= MAX_WALK + 0.01, f"capa {L}: velocidad al andar <= {MAX_WALK:g} ({r['max_speed']:.0f})")
     if reb:
-        for R, gain, jelly in reb:
-            check(jelly >= 1, f"enjambre en capa {R}: da jalea ({jelly})")
-        best = [x for x in reb if 7 <= x[0] <= 9]
-        ok = any(0.40 <= g_ <= 0.60 for _, g_, _ in best)
-        check(ok, "primer enjambre en capas 7-9 y segunda vuelta 40-60 % más rápida: "
-              + ", ".join(f"capa {R}: {100 * g_:.0f} %" for R, g_, _ in best))
+        # Cada capa 7, 8 y 9 tiene que cumplir (antes bastaba con una)
+        lo, hi = REB_GAIN2
+        for R, gain, gain3, jellies in reb:
+            check(jellies[0] >= 1, f"enjambre en capa {R}: da jalea ({jellies[0]})")
+            if R == 7:
+                check(lo <= gain <= hi, f"enjambre en capa {R}: segunda vuelta {100 * lo:.0f}-{100 * hi:.0f} % más rápida ({100 * gain:.0f} %)")
+            elif 8 <= R <= 9:
+                check(lo <= gain <= REB_GAIN2_DEEP, f"enjambre en capa {R}: segunda vuelta {100 * lo:.0f}-{100 * REB_GAIN2_DEEP:.0f} % más rápida ({100 * gain:.0f} %)")
+            if 7 <= R <= 9:
+                check(gain3 > gain and 1 - gain3 >= REB_FLOOR3,
+                      f"enjambre en capa {R}: tercera vuelta más rápida que la segunda y >= {100 * REB_FLOOR3:.0f} % del tiempo de la primera "
+                      f"({100 * (1 - gain3):.0f} % del tiempo; la segunda, {100 * (1 - gain):.0f} %)")
+
+
+def spend_jelly(royal, j):
+    """Gasta la jalea en el árbol real: siempre lo más barato. Devuelve lo que sobra."""
+    while True:
+        opts = [(royal_cost(k, royal[k]), k) for k in ROYAL if royal.get(k, 0) < ROYAL[k][0]]
+        opts = [o for o in opts if o[0] <= j]
+        if not opts:
+            return j
+        c, k = min(opts)
+        j -= c
+        royal[k] += 1
 
 
 def rebirth_check(active):
+    """Tres vueltas hasta la capa R: tras cada enjambre se gasta la jalea nueva (más lo que sobró) y se
+    conservan los trofeos. Devuelve (R, ganancia de la 2.ª, ganancia de la 3.ª, jalea de cada enjambre)."""
     out = []
     for R in (7, 8, 9):
-        g1, lay1, _, _ = play(active, stop_depth=R)
-        t1 = g1.t
-        jelly = jelly_for(g1.run)
-        # Gasta la jalea en el árbol real: siempre lo más barato
         royal = {k: 0 for k in ROYAL}
-        j = jelly
-        while True:
-            opts = [(ROYAL[k][1] + ROYAL[k][2] * royal[k], k) for k in ROYAL if royal[k] < ROYAL[k][0]]
-            opts = [o for o in opts if o[0] <= j]
-            if not opts:
-                break
-            c, k = min(opts)
-            j -= c
-            royal[k] += 1
-        g2, _, _, _ = play(active, royal=royal, stop_depth=R)
-        out.append((R, 1 - g2.t / max(t1, 1e-9), jelly))
+        times, jellies = [], []
+        left, trophies = 0, 0
+        for run in range(3):
+            g, _, _, _ = play(active, royal=royal if run else None, stop_depth=R, trophies=trophies)
+            times.append(g.t)
+            jellies.append(g.jelly())
+            left = spend_jelly(royal, left + jellies[-1] + int(g.gift_jelly))
+            trophies = g.trophies()
+        out.append((R, 1 - times[1] / max(times[0], 1e-9), 1 - times[2] / max(times[0], 1e-9), jellies))
     return out
 
 
@@ -1175,8 +1321,19 @@ def main():
           f"{13 * sum(PER_ZONE) + 1 + int(sum(GARDEN_COUNTS) * G_MAX)} modelos")
     if 0.85 in results and 0.45 in results:
         reb = rebirth_check(0.85)
-        print("\nEnjambre: " + "; ".join(f"en capa {R}: {jelly} jalea, segunda vuelta {100 * gain:.0f} % más rápida"
-                                         for R, gain, jelly in reb))
+        print("\nEnjambre: " + "; ".join(f"en capa {R}: {j[0]} jalea, segunda vuelta {100 * gain:.0f} % más rápida"
+                                         for R, gain, _, j in reb))
+        print("Tercera vuelta: " + "; ".join(f"en capa {R}: {j[1]} jalea del segundo enjambre, tercera vuelta "
+                                             f"{100 * gain3:.0f} % más rápida que la primera ({j[2]} jalea)"
+                                             for R, _, gain3, j in reb))
+        # Mascotas típicas contra ninguna (perfil activo): cuándo se excava la capa 14
+        if PETS is None:
+            base14 = next(r["start"] for r in results[0.85][0] if r["layer"] == LAYERS)
+        else:
+            base14 = play(0.85, stop_depth=LAYERS, pets=None)[0].t
+        pets14 = play(0.85, stop_depth=LAYERS, pets="tipicas")[0].t
+        print(f"Mascotas típicas (PETS=tipicas): capa {LAYERS} a los {pets14 / 60:.0f} min, sin mascotas a los "
+              f"{base14 / 60:.0f} min ({100 * (1 - pets14 / base14):.0f} % antes)")
         ra, fba, fwa, _ = results[0.85]
         rc, _, _, _ = results[0.45]
         verify(ra, rc, fba, fwa, reb)

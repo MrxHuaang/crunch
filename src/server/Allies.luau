@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Depots = require(script.Parent.Depots)
 local Events = require(script.Parent.Events)
 local FoodService = require(script.Parent.FoodService)
 local PlayerService = require(script.Parent.PlayerService)
@@ -76,14 +77,35 @@ local function nearHome(profile, position: Vector3, margin: number): boolean
 	return ((center - position) * FLAT).Magnitude <= Config.Anthill.DepositRadius * profile.stats.hillScale + margin
 end
 
+-- Dónde entregan la abeja y el tirachinas: el hormiguero más cercano en el que puedes entregar, el
+-- de casa o el de una zona abierta (Depots). Antes volaban siempre a casa, y lejos casi no servían.
+local function dropPoint(profile, position: Vector3): Vector3
+	local best = hillTop(profile)
+	local bestDistance = ((best - position) * FLAT).Magnitude
+	for zone = 2, #Config.Zones do
+		if Depots.isOpen(profile, zone) then
+			local top = Depots.top(zone)
+			local distance = ((top - position) * FLAT).Magnitude
+			if distance < bestDistance then
+				best, bestDistance = top, distance
+			end
+		end
+	end
+	return best
+end
+
+local function nearDrop(profile, position: Vector3, margin: number): boolean
+	return nearHome(profile, position, margin) or Depots.near(profile, position, margin) ~= nil
+end
+
 -- Entrega a distancia (abeja o tirachinas): la misma cuenta que a pie, con sus sucesos.
-local function deliver(profile, carry: number, carryValue: number, runId: number)
+local function deliver(profile, carry: number, carryValue: number, runId: number, target: Vector3)
 	if carry <= 0 or not current(profile, runId) or not profile.hill then
 		return
 	end
 	local credited, full, doubled = PlayerService.credit(profile, carry, carryValue)
 	Profiles.push(profile)
-	remote:FireClient(profile.player, "Delivered", hillTop(profile), credited, doubled, full)
+	remote:FireClient(profile.player, "Delivered", target, credited, doubled, full)
 end
 
 -- Quita la carga entera a la jugadora. Devuelve (trozos, valor).
@@ -110,13 +132,13 @@ local function updateBee(profile, s, now: number, root: BasePart)
 	end
 	local full = profile.carry >= stats.capacity
 	local ready = (now >= s.beeReadyAt and profile.carry >= stats.capacity * A.Bee.MinLoad) or (stats.beeOnFull and full)
-	if not ready or nearHome(profile, root.Position, 6) then
+	if not ready or nearDrop(profile, root.Position, 6) then
 		return
 	end
 
 	local player = profile.player
 	local runId = profile.data.rebirths
-	local target = hillTop(profile)
+	local target = dropPoint(profile, root.Position)
 	local distance = ((target - root.Position) * FLAT).Magnitude
 	local fly = math.max(distance / math.max(stats.beeSpeed, 1), A.Bee.MinFly)
 	local approach = A.Bee.Approach
@@ -130,7 +152,7 @@ local function updateBee(profile, s, now: number, root: BasePart)
 			return
 		end
 		local carry, value = grabLoad(profile)
-		task.delay(fly, deliver, profile, carry, value, runId)
+		task.delay(fly, deliver, profile, carry, value, runId, target)
 	end)
 	task.delay(approach + fly * 2 + 0.3, function()
 		s.beeBusy = false
@@ -349,13 +371,13 @@ local function onSling(profile, s, root: BasePart)
 	if stats.slingCooldown <= 0 or now < s.slingReadyAt or profile.carry <= 0 or not profile.hill then
 		return
 	end
-	if nearHome(profile, root.Position, 0) then
-		return -- ya estás en casa: se entrega sola
+	if nearDrop(profile, root.Position, 0) then
+		return -- ya estás en un hormiguero: se entrega sola
 	end
-	local target = hillTop(profile)
+	local target = dropPoint(profile, root.Position)
 	local distance = ((target - root.Position) * FLAT).Magnitude
 	if distance > stats.slingRange then
-		Profiles.say(profile, "Mi hormiguero está demasiado lejos para lanzar", 2.5)
+		Profiles.say(profile, "El hormiguero está demasiado lejos para lanzar", 2.5)
 		return
 	end
 	s.slingReadyAt = now + stats.slingCooldown
@@ -366,7 +388,7 @@ local function onSling(profile, s, root: BasePart)
 	local carry, value = grabLoad(profile)
 	local fly = math.min(A.Sling.FlyTime + distance / 800, 3.5)
 	remote:FireAllClients("Sling", profile.player, root.Position + Vector3.new(0, 2, 0), target, fly, color, share)
-	task.delay(fly, deliver, profile, carry, value, runId)
+	task.delay(fly, deliver, profile, carry, value, runId, target)
 end
 
 local function onRequest(player: Player, action: any)

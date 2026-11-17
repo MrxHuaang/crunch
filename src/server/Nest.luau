@@ -214,8 +214,8 @@ end
 local function eggValue(profile): number
 	local stats = profile.stats
 	local zoneFood = Config.Foods[(stats.depth - 1) * 3 + 1]
-	-- data.rate ya lleva el multiplicador de comida y addFood lo vuelve a aplicar: se quita aquí
-	local colony = profile.data.rate / math.max(stats.foodMult, 1e-3) * stats.eggSeconds
+	-- La tasa base ya lleva el multiplicador de comida y addFood lo vuelve a aplicar: se quita aquí
+	local colony = Profiles.baseRate(profile) / math.max(stats.foodMult, 1e-3) * stats.eggSeconds
 	return math.max(colony, Config.Egg.FloorBites * stats.biteDamage * zoneFood.value) * stats.eggMult
 end
 
@@ -230,7 +230,7 @@ end
 local function paidEggValue(profile): number
 	local stats = profile.stats
 	local zoneFood = Config.Foods[(stats.depth - 1) * 3 + 1]
-	local colony = profile.data.rate / math.max(stats.foodMult, 1e-3) * Config.Egg.PaidSeconds
+	local colony = Profiles.baseRate(profile) / math.max(stats.foodMult, 1e-3) * Config.Egg.PaidSeconds
 	return math.max(colony, Config.Egg.PaidFloor * stats.biteDamage * zoneFood.value)
 end
 
