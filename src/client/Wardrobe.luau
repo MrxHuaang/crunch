@@ -1122,7 +1122,8 @@ local function layoutStage(compact: boolean, phone: boolean)
 	if not p.back then
 		return
 	end
-	local actionH = if compact then 126 else ACTION_H
+	-- En celular la ficha es una sola fila (nombre + botón): lo que ahorra se lo lleva la hormiga.
+	local actionH = if phone then TAP + 8 elseif compact then 126 else ACTION_H
 	phoneLayout = phone
 	-- La ficha de la prenda sigue bajo la peana: en el estante le quitaba casi todo el alto a la ropa.
 	-- En celular la peana gana sitio porque los botes de pintura pasan al estante.
@@ -1135,9 +1136,16 @@ local function layoutStage(compact: boolean, phone: boolean)
 	viewport.Size = UDim2.new(1, 0, 1, if phone then 0 else -POTS_H)
 	swoosh.Position = UDim2.new(0.5, 0, 1, (if phone then 0 else -POTS_H) - 50)
 	potsRow.Visible = not phone
-	p.status.Visible = not compact
-	p.holder.Position = UDim2.fromOffset(0, if compact then 34 else 62)
-	p.set.Position = UDim2.fromOffset(0, if compact then 94 else 128)
+	p.status.Visible = not compact and not phone
+	local buttonW = if phone then 160 else STAGE_W - 6
+	p.name.Size = UDim2.fromOffset(if phone then STAGE_W - buttonW - 10 else STAGE_W - 4, if phone then TAP else 32)
+	p.holder.Size = UDim2.fromOffset(buttonW, if phone then TAP else 56)
+	p.holder.Position = UDim2.fromOffset(if phone then STAGE_W - buttonW - 6 else 0, if phone then 0 elseif compact then 34 else 62)
+	-- El sello del conjunto ya no cabe en la fila: en celular flota como tarjeta sobre el pie de la peana
+	-- y solo aparece cuando lo elegido hace conjunto.
+	p.set.Position = UDim2.fromOffset(0, if phone then -TAP - 10 elseif compact then 94 else 128)
+	p.set.Size = UDim2.fromOffset(STAGE_W - 6, if phone then TAP else 40)
+	p.set.BackgroundTransparency = if phone then 0.1 else 1
 	if isOpen and potsInRack ~= phone then
 		buildDisplays()
 		paint()
@@ -1314,8 +1322,10 @@ local function buildStage()
 	-- Sello del conjunto: un lacre y una línea que se toca
 	local setHolder = button(counter)
 	at(setHolder, 0, 128, STAGE_W - 6, 40)
-	setHolder.ZIndex = 4
+	setHolder.ZIndex = 5 -- por encima de la vista 3D (4) cuando en celular flota sobre ella
+	setHolder.BackgroundColor3 = Comic.Paper
 	setHolder.Visible = false
+	Comic.round(setHolder, 10)
 	local wax = blob(setHolder, SEAL, 18, 20, 30, 30, 0, -1, 3)
 	wax.ZIndex = 5
 	blob(wax, Color3.fromRGB(230, 70, 80), 15, 15, 14, 14, 0, -1).ZIndex = 5
@@ -1336,7 +1346,7 @@ local function buildStage()
 		scale = pressScale,
 		set = { holder = setHolder, label = setLabel },
 	}
-	stageParts = { back = back, counter = counter, status = status, holder = holder, set = setHolder }
+	stageParts = { back = back, counter = counter, name = name, status = status, holder = holder, set = setHolder }
 end
 
 local function buildRack()

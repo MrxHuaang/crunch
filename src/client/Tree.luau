@@ -62,6 +62,46 @@ local function at(object: GuiObject, x: number, y: number, w: number?, h: number
 	end
 end
 
+-- Ajuste "Movimiento suave" (lo pone el HUD): sin temblor de página ni piedras que caen
+local function calm(): boolean
+	return Players.LocalPlayer:GetAttribute("ReducedMotion") == true
+end
+
+-- Sacudida de "no puedes" (la de Wardrobe/Store). Una a la vez: una segunda tomaría como base
+-- una posición a medio sacudir y el objeto se quedaría movido.
+local shaking: { [GuiObject]: boolean } = {}
+local function shake(object: GuiObject)
+	if shaking[object] or calm() then -- con Movimiento suave, sin sacudidas
+		return
+	end
+	shaking[object] = true
+	local base = object.Position
+	task.spawn(function()
+		for _, dx in { 7, -7, 5, -4, 2, 0 } do
+			object.Position = base + UDim2.fromOffset(dx, 0)
+			task.wait(0.035)
+		end
+		object.Position = base
+		shaking[object] = nil
+	end)
+end
+
+-- Sin comida (o jalea) suficiente: el botón se sacude, suena el "bonk" y el "Faltan X" late
+-- dos veces en rojo (el tween va y vuelve solo a su color y transparencia)
+local denyColor: { [TextLabel]: Color3 } = setmetatable({}, { __mode = "k" }) :: any
+local function deny(holder: GuiObject, label: TextLabel)
+	shake(holder)
+	Sfx.error()
+	-- Siempre desde su color de verdad: con dos toques seguidos se quedaba rojizo para siempre
+	local base = denyColor[label] or label.TextColor3
+	denyColor[label] = base
+	label.TextColor3 = base
+	TweenService:Create(label, TweenInfo.new(0.16, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 1, true), {
+		TextColor3 = Comic.Red,
+		TextTransparency = 0,
+	}):Play()
+end
+
 local function bandTop(layer: number): number
 	return if layer == 1 then SURFACE else FIRST_BAND + (layer - 1) * LAYOUT.LayerHeight
 end
@@ -253,6 +293,7 @@ local function buildCover(layer: number)
 		local rock = Comic.frame(cover, Color3.fromRGB(150, 156, 170):Lerp(Comic.DirtDark, 0.35))
 		local size = 30 + (i * 37 + layer * 13) % 46
 		at(rock, (i * 173 + layer * 71) % (W - 80) + 20, (i * 97 + layer * 29) % (LAYOUT.LayerHeight - 90) + 20, size, size * 0.7)
+		rock.Name = "Rock" -- al excavar, las piedras caen (breakCover)
 		rock.Rotation = (i * 23) % 40 - 20
 		rock.ZIndex = 13
 		Comic.round(rock, 14)
@@ -279,6 +320,10 @@ local function buildCover(layer: number)
 	label.Size = UDim2.fromScale(1, 1)
 	label.ZIndex = 16
 	face.MouseButton1Click:Connect(function()
+		if not covers[layer].canDig then
+			deny(holder, label)
+			return
+		end
 		remotes.Buy:FireServer("dig")
 	end)
 
@@ -436,6 +481,11 @@ local function buildCard()
 		if not selected then
 			return
 		end
+		-- Enjambrar no entra: su "no" es la espera de 1 s contra el doble toque, y ya se ve en gris
+		if selected.kind ~= "swarm" and not cardParts.canBuy then
+			deny(buy.holder, buy.label)
+			return
+		end
 		if selected.kind == "workers" then
 			remotes.Buy:FireServer("workers", nil, 1)
 		elseif selected.kind == "node" or selected.kind == "royal" or selected.kind == "mini" then
@@ -448,6 +498,10 @@ local function buildCard()
 	-- Obreras: cría todas las que quepan. Cámaras con niveles: sube todos los que puedas pagar.
 	max.face.MouseButton1Click:Connect(function()
 		if not selected then
+			return
+		end
+		if not cardParts.canBuy then
+			deny(max.holder, buy.label) -- el "Faltan X" está en el botón de al lado
 			return
 		end
 		if selected.kind == "workers" then
@@ -740,6 +794,7 @@ local function showCard(x: number, y: number, above: boolean, info)
 	cardParts.buy.holder.Visible = info.buyText ~= nil
 	cardParts.max.holder.Visible = info.showMax == true
 	cardParts.max.label.Text = info.maxText or "Máximo"
+	cardParts.canBuy = info.canBuy == true -- lo leen los botones para avisar si no alcanza
 	if info.buyText then
 		cardParts.buy.label.Text = info.buyText
 		cardParts.buy.face.BackgroundColor3 = if info.canBuy then Comic.Yellow else Comic.DirtLight
@@ -763,6 +818,47 @@ local function whyLocked(def, depth: number): string
 		return "Excava antes: " .. Config.NodeById[def.parent].name
 	end
 	return "Primero necesitas una obrera"
+end
+
+-- Excavar: la tapa no desaparece de golpe. La de verdad se esconde ya (así el repintado y el
+-- enjambrar la siguen tratando igual) y una copia suelta las piedras, que saltan y caen, mientras
+-- baja un poco y se funde (~0,4 s). Con Movimiento suave, solo el fundido.
+local function breakCover(view)
+	local ghost = view.cover:Clone()
+	ghost.Parent = canvas
+	view.cover.Visible = false
+	local still = calm()
+	local TIME = 0.4
+	local fade = TweenInfo.new(TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	for _, object in ghost:GetDescendants() do
+		if object:IsA("GuiObject") then
+			if object.Name == "Rock" and not still then
+				-- Back + In: un saltito hacia arriba y luego caída
+				TweenService:Create(object, TweenInfo.new(TIME, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+					Position = object.Position + UDim2.fromOffset(math.random(-60, 60), LAYOUT.LayerHeight * 0.8),
+					Rotation = object.Rotation + math.random(-120, 120),
+				}):Play()
+			end
+			if object.BackgroundTransparency < 1 then
+				TweenService:Create(object, fade, { BackgroundTransparency = 1 }):Play()
+			end
+			if object:IsA("TextLabel") or object:IsA("TextButton") then
+				TweenService:Create(object, fade, { TextTransparency = 1 }):Play()
+			elseif object:IsA("ImageLabel") then
+				TweenService:Create(object, fade, { ImageTransparency = 1 }):Play()
+			end
+		elseif object:IsA("UIStroke") then
+			TweenService:Create(object, fade, { Transparency = 1 }):Play()
+		end
+	end
+	local goal: { [string]: any } = { BackgroundTransparency = 1 }
+	if not still then
+		goal.Position = ghost.Position + UDim2.fromOffset(0, 40)
+	end
+	TweenService:Create(ghost, fade, goal):Play()
+	task.delay(TIME + 0.05, function()
+		ghost:Destroy()
+	end)
 end
 
 -- Repinta todo según la partida. Devuelve true si hay algo que puedas comprar ya.
@@ -831,8 +927,14 @@ function Tree.refresh(): boolean
 	local canDig = food >= digCost
 	anyAffordable = anyAffordable or canDig
 	for layer, view in covers do
-		view.cover.Visible = layer > depth
+		local buried = layer > depth
+		if not buried and view.cover.Visible and isOpen and layer == depth then
+			breakCover(view) -- recién excavada con el árbol abierto: se rompe a la vista
+		else
+			view.cover.Visible = buried
+		end
 		local isNext = layer == depth + 1
+		view.canDig = isNext and canDig
 		view.holder.Visible = isNext
 		view.promise.Visible = isNext
 		view.badge.Visible = isNext and canDig
@@ -1141,8 +1243,8 @@ local function celebrateLevel(kind: string, id: string, view)
 		Sfx.fanfare()
 		task.delay(0.35, Sfx.pop, 1.9, 0.5)
 	else
-		-- Más agudo cuanto más alto el nivel: subir se oye
-		Sfx.pop(1 + math.min(new, 30) * 0.02)
+		-- Compra hecha: "ka-ching"; si subió varios niveles de golpe, una ristra de pops detrás
+		Sfx.buy()
 		if gained > 1 then
 			for i = 1, math.min(gained - 1, 4) do
 				task.delay(i * 0.05, Sfx.pop, 1.1 + i * 0.1, 0.3)
@@ -1151,11 +1253,93 @@ local function celebrateLevel(kind: string, id: string, view)
 	end
 end
 
+-- Momento de capa nueva dentro del árbol: estallido "¡CAPA N! · zona" con un temblor corto de
+-- página y, al rato, un botón para ir a jugarla. Se borra al cerrar el árbol o a los 8 s.
+local digParts: { Instance } = {}
+local digToken = 0
+
+local function clearDig()
+	digToken += 1 -- lo que la celebración tenga pendiente ya no sale (por ejemplo, al cerrar el árbol)
+	for _, part in digParts do
+		part:Destroy()
+	end
+	table.clear(digParts)
+end
+
+local function digMoment(depth: number)
+	clearDig()
+	digToken += 1
+	local token = digToken
+	local still = calm()
+	local zone = Config.Zones[depth]
+	-- Centro de lo que se ve: en celular el corte también se recorre en X
+	local cx = canvas.CanvasPosition.X + math.min(page.Size.X.Offset, W) / 2
+	local cy = bandTop(depth) + 60
+
+	local label = Comic.label(canvas, "¡CAPA " .. depth .. "!" .. (if zone then "  ·  " .. zone.name else ""), Comic.Display, 56, Comic.Yellow)
+	label.AnchorPoint = Vector2.new(0.5, 0.5)
+	label.Position = UDim2.fromOffset(cx, cy)
+	label.Size = UDim2.fromOffset(0, 76)
+	label.AutomaticSize = Enum.AutomaticSize.X
+	label.BackgroundTransparency = 0
+	label.BackgroundColor3 = Comic.Red
+	label.Rotation = -4
+	label.ZIndex = 25
+	Comic.round(label, 22)
+	Comic.ink(label, 5)
+	Comic.ink(label, 6, true)
+	local pad = Instance.new("UIPadding")
+	pad.PaddingLeft = UDim.new(0, 26)
+	pad.PaddingRight = UDim.new(0, 26)
+	pad.Parent = label
+	table.insert(digParts, label)
+	if not still then
+		local pop = Instance.new("UIScale")
+		pop.Parent = label
+		Comic.punch(pop, 0.3)
+		shake(page)
+	end
+
+	task.wait(1.5)
+	if token ~= digToken or not isOpen then
+		return
+	end
+	local holder, face = Comic.button(canvas, UDim2.fromOffset(300, 70), Comic.Green, 6)
+	holder.AnchorPoint = Vector2.new(0.5, 0)
+	holder.Position = UDim2.fromOffset(cx, cy + 62)
+	holder.ZIndex = 25
+	holder.Shadow.ZIndex = 25
+	face.ZIndex = 26
+	local go = Comic.label(face, "¡Ir a la zona!", Comic.Display, 34, Comic.Ink)
+	go.Size = UDim2.fromScale(1, 1)
+	go.ZIndex = 27
+	face.MouseButton1Click:Connect(function()
+		Sfx.pop(1.2)
+		Tree.close()
+	end)
+	table.insert(digParts, holder)
+	if not still then
+		local pop = Instance.new("UIScale")
+		pop.Parent = holder
+		Comic.punch(pop, 0.5)
+	end
+	task.delay(6.5, function()
+		if token == digToken then
+			clearDig()
+		end
+	end)
+end
+
 -- Rebote de la cámara recién comprada
 function Tree.celebrate(kind: string, id: any)
 	if kind == "dig" then
-		Sfx.fanfare()
-		scrollTo(bandTop(State.depth()) - 120)
+		-- El servidor manda la capa nueva: el atributo Depth puede llegar justo después
+		local depth = if type(id) == "number" then id else State.depth()
+		Sfx.levelUp()
+		scrollTo(bandTop(depth) - 120)
+		if isOpen then
+			task.spawn(digMoment, depth)
+		end
 		return
 	elseif kind == "mini" then
 		local view = miniViews[id]
@@ -1167,7 +1351,7 @@ function Tree.celebrate(kind: string, id: any)
 			Comic.punch(view.scale, 1.5)
 			flashChamber(view.button, Comic.Yellow, 0.6)
 		end
-		Sfx.pop(1.25)
+		Sfx.buy()
 		return
 	end
 	if kind == "node-max" then
@@ -1179,7 +1363,7 @@ function Tree.celebrate(kind: string, id: any)
 			Comic.punch(view.scale, 1.35)
 			flashChamber(view.button, Comic.Yellow, 0.5)
 		end
-		Sfx.pop(1.1)
+		Sfx.buy()
 		return
 	end
 	if type(id) == "string" then
@@ -1203,6 +1387,7 @@ end
 function Tree.close()
 	isOpen = false
 	selected = nil
+	clearDig()
 	gui.Enabled = false
 end
 

@@ -354,9 +354,15 @@ local function tick(ctx, key: string, t: number, period: number): boolean
 	return false
 end
 
+-- Los tuyos suenan en 2D; los de otra jugadora salen de su hormiga, en 3D y más bajos con la distancia
 local function hear(ctx, fn: (...any) -> (), ...: any)
-	if ctx.hear then
+	if not ctx.hear then
+		return
+	end
+	if ctx.mine then
 		fn(...)
+	else
+		Sfx.at(ctx.root.Position, fn, ...)
 	end
 end
 
@@ -2484,8 +2490,10 @@ local function combo(a: any, b: any)
 	Comic.boil(box, 3)
 	Debris:AddItem(gui, 2.4)
 	Debris:AddItem(anchor, 2.4)
-	if camera and (camera.CFrame.Position - middle).Magnitude < HEAR then
+	if a == player or b == player then
 		Sfx.fanfare()
+	elseif camera and (camera.CFrame.Position - middle).Magnitude < HEAR then
+		Sfx.at(middle, Sfx.fanfare)
 	end
 	if a == player or b == player then
 		Fx.shake(0.15)

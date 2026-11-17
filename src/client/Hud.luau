@@ -6,6 +6,7 @@
 -- 22 % al 82 % de alto; ahí no vive nada fijo. Todo se pega a los bordes y es compacto
 -- (medidas de diseño pensadas para ~1080 px de alto; Hud.fitScale las adapta a cada pantalla).
 
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextService = game:GetService("TextService")
@@ -522,7 +523,8 @@ local function buildSide()
 	end)
 end
 
--- Interruptor redondo de la música, abajo a la izquierda. No se recuerda entre partidas.
+-- Botón redondo del sonido, abajo a la izquierda: abre el menú de Música, Efectos y Movimiento suave.
+-- No se recuerda entre partidas.
 -- En celular es la última casilla de la rejilla del menú: abajo a la izquierda está el joystick.
 local function buildMute()
 	local corner = Comic.frame(if compactSide then sideColumn else gui)
@@ -554,18 +556,101 @@ local function buildMute()
 	strike.ZIndex = 3
 	Comic.ink(strike, 2, true)
 
-	local muted = Sfx.isMuted()
 	local function paint()
-		face.BackgroundColor3 = if muted then Comic.DirtLight else Comic.Paper
-		note.TextTransparency = if muted then 0.5 else 0
+		-- Tachado si la música está apagada; atenuado si además (o solo) lo están los efectos
+		local muted = Sfx.isMuted()
+		local quiet = muted or Sfx.isEffectsMuted()
+		face.BackgroundColor3 = if quiet then Comic.DirtLight else Comic.Paper
+		note.TextTransparency = if quiet then 0.5 else 0
 		strike.Visible = muted
 	end
 	paint()
 
+	-- Menú de sonido: el botón abre tres interruptores. Cuelga del botón, así hereda su escala
+	-- (en táctil, filas de 44 px reales como mínimo). Va como una bandeja más: se cierra al tocar fuera.
+	local panel = Comic.frame(corner)
+	panel.Name = "SoundMenu"
+	panel.AutomaticSize = Enum.AutomaticSize.XY
+	panel.Visible = false
+	panel.ZIndex = 6
+	local layout = Instance.new("UIListLayout")
+	layout.Padding = UDim.new(0, 8)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = panel
+	local menu = { holder = corner, tray = panel, alert = nil, items = {} }
+	sideGroups.Sonido = menu
+
+	local player = Players.LocalPlayer
+	if player:GetAttribute("ReducedMotion") == nil then
+		-- Arranca como lo tenga en los ajustes de Roblox (si la plataforma lo expone)
+		local ok, reduced = pcall(function()
+			return (GuiService :: any).ReducedMotionEnabled
+		end)
+		player:SetAttribute("ReducedMotion", ok and reduced == true)
+	end
+
+	local function toggle(order: number, text: string, get: () -> boolean, set: (boolean) -> ())
+		local row, rowFace = Comic.button(panel, UDim2.fromOffset(250, 44), Comic.Paper, 4) -- con 220 "Movimiento suave" tocaba el SÍ/NO
+		row.LayoutOrder = order
+		local label = Comic.label(rowFace, text, Comic.Display, 20, Comic.Ink)
+		label.Position = UDim2.fromOffset(12, 0)
+		label.Size = UDim2.new(1, -74, 1, 0)
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.TextScaled = true
+		local limit = Instance.new("UITextSizeConstraint")
+		limit.MaxTextSize = 20
+		limit.MinTextSize = 12
+		limit.Parent = label
+		-- Estado con palabra y color (no solo color)
+		local chip = Comic.label(rowFace, "", Comic.Display, 17, Comic.Paper)
+		chip.AnchorPoint = Vector2.new(1, 0.5)
+		chip.Position = UDim2.new(1, -8, 0.5, 0)
+		chip.Size = UDim2.fromOffset(50, 28)
+		chip.BackgroundTransparency = 0
+		Comic.round(chip, 8)
+		Comic.ink(chip, 2.5, true)
+		local function paintRow()
+			local on = get()
+			chip.Text = if on then "SÍ" else "NO"
+			chip.BackgroundColor3 = if on then Comic.Green else Comic.Red
+		end
+		paintRow()
+		rowFace.MouseButton1Click:Connect(function()
+			set(not get())
+			paintRow()
+			paint()
+		end)
+	end
+	toggle(1, "Música", function()
+		return not Sfx.isMuted()
+	end, function(on)
+		Sfx.setMuted(not on)
+	end)
+	toggle(2, "Efectos", function()
+		return not Sfx.isEffectsMuted()
+	end, function(on)
+		Sfx.setEffectsMuted(not on)
+	end)
+	toggle(3, "Movimiento suave", function()
+		return player:GetAttribute("ReducedMotion") == true
+	end, function(on)
+		player:SetAttribute("ReducedMotion", on)
+	end)
+
+	-- PC: a la derecha del botón, creciendo hacia arriba desde la esquina. Celular: a la derecha de
+	-- su casilla, hacia abajo o hacia arriba según en qué mitad de la pantalla quede (no se sale).
+	local function place()
+		local up = not compactSide or corner.AbsolutePosition.Y > gui.AbsoluteSize.Y / 2
+		panel.AnchorPoint = Vector2.new(0, if up then 1 else 0)
+		panel.Position = UDim2.new(1, 12, if up then 1 else 0, 0)
+	end
+
 	face.MouseButton1Click:Connect(function()
-		muted = not muted
-		Sfx.setMuted(muted)
-		paint()
+		closeGroups(menu)
+		panel.Visible = not panel.Visible
+		if panel.Visible then
+			place()
+		end
 	end)
 end
 

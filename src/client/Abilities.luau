@@ -8,6 +8,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local Assets = require(ReplicatedStorage.Shared.Assets)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Bubble = require(script.Parent.Bubble)
 local Comic = require(script.Parent.Comic)
 local Hud = require(script.Parent.Hud)
 local Fx = require(script.Parent.Fx)
@@ -58,11 +59,15 @@ local function root(): BasePart?
 	return if part and part:IsA("BasePart") then part else nil
 end
 
-local function doTrail()
+-- Las habilidades devuelven un texto si no hicieron nada por un motivo que no se ve en el botón
+-- (la recarga ya se ve: el botón muestra los segundos). Lo enseña `use` en un bocadillo.
+local function doTrail(): string?
 	local target = Targeting.current()
-	if target then
-		remotes.Trail:FireServer(target)
+	if not target then
+		return "No hay comida a tiro para el rastro"
 	end
+	remotes.Trail:FireServer(target)
+	return nil
 end
 
 -- Correr: el botón la deja puesta o la quita. Con teclado basta mantener Shift.
@@ -127,15 +132,15 @@ local function wingsTarget(from: Vector3): Vector3?
 end
 
 -- Vuelo en arco: dura más y sube más cuanto más lejos vas.
-local function doWings()
+local function doWings(): string?
 	local part = root()
 	if flying or not part or os.clock() < wingsReadyAt then
-		return
+		return nil
 	end
 	local from = part.Position
 	local to = wingsTarget(from)
 	if not to or ((to - from) * FLAT).Magnitude < 1 then
-		return
+		return "Ahora no hay a dónde volar"
 	end
 
 	local distance = (to - from).Magnitude
@@ -166,6 +171,7 @@ local function doWings()
 			flying = false
 		end
 	end)
+	return nil
 end
 
 local function doFrenzy()
@@ -188,10 +194,14 @@ local function doStomp()
 	end
 end
 
-local function doSling()
-	if State.now() >= State.num("SlingReadyAt") and State.num("Carry") > 0 then
+local function doSling(): string?
+	if State.num("Carry") <= 0 then
+		return "Para lanzar necesitas carga: muerde algo"
+	end
+	if State.now() >= State.num("SlingReadyAt") then
 		askAllies("Sling")
 	end
+	return nil
 end
 
 -- Lluvia propia: la decide el servidor (módulo Extras, remoto "Extras")
@@ -236,6 +246,39 @@ local function available(id: string): boolean
 		return true -- correr viene de serie
 	end
 	return if id == "wings" then State.flag("HasWings") else (State.nodes()[id] or 0) > 0
+end
+
+-- Sacudida de "no puedes" (la de Wardrobe/Store). Se sacude la cara y no el soporte: al soporte
+-- lo coloca la lista o la rejilla. Una a la vez, para no dejarla movida.
+local shaking: { [GuiObject]: boolean } = {}
+local function shake(object: GuiObject)
+	if shaking[object] or player:GetAttribute("ReducedMotion") == true then -- Movimiento suave: sin sacudidas
+		return
+	end
+	shaking[object] = true
+	local base = object.Position
+	task.spawn(function()
+		for _, dx in { 7, -7, 5, -4, 2, 0 } do
+			object.Position = base + UDim2.fromOffset(dx, 0)
+			task.wait(0.035)
+		end
+		object.Position = base
+		shaking[object] = nil
+	end)
+end
+
+-- Usar una habilidad (botón o tecla). En recarga o sin efecto: sacudida y "bonk", y si el motivo
+-- no se ve en el botón, un bocadillo corto.
+local function use(ability)
+	local why = if ability.ready() > 0 then "" else ability.run()
+	if type(why) ~= "string" then
+		return
+	end
+	shake(buttons[ability.id].face)
+	Sfx.error()
+	if why ~= "" then
+		Bubble.flash(why, 2)
+	end
 end
 
 local function build(gui: ScreenGui)
@@ -319,7 +362,7 @@ local function build(gui: ScreenGui)
 
 		face.MouseButton1Click:Connect(function()
 			if available(ability.id) then
-				ability.run()
+				use(ability)
 			end
 		end)
 		buttons[ability.id] = { holder = holder, face = face, icon = icon, wait = wait, tag = tag }
@@ -406,7 +449,7 @@ function Abilities.start(gui: ScreenGui, remoteFolder: Folder)
 		end
 		for _, ability in LIST do
 			if not ability.hold and input.KeyCode == ability.key and available(ability.id) then
-				ability.run()
+				use(ability)
 			end
 		end
 	end)

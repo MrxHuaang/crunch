@@ -632,7 +632,8 @@ local function animateCrumbs()
 			if not crumb.landed then
 				crumb.landed = true
 				if nearCamera(crumb.pos, 70) then
-					Sfx.pop(1.6 + rng:NextNumber(0, 0.3))
+					-- En 3D desde la miga: se oye dónde cayó
+					Sfx.near(crumb.pos, "pop", 1.6 + rng:NextNumber(0, 0.3))
 				end
 			end
 			y = 3 * math.abs(math.sin(t * math.pi / 0.42)) * math.exp(-t * 2.4)

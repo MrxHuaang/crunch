@@ -27,13 +27,13 @@ local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local Assets = require(ReplicatedStorage.Shared.Assets)
 local Comic = require(script.Parent.Comic)
 local GameFx = require(script.Parent.Fx)
+local Sfx = require(script.Parent.Sfx)
 
 local CasteFx = {}
 
@@ -401,22 +401,8 @@ function CasteFx.sound(kind: string, pos: Vector3?, pitch: number?)
 			if layer[5] then
 				effect(sound, layer[5])
 			end
-			if typeof(pos) == "Vector3" then
-				-- Bajo Terrain la posición local de un Attachment es la del mundo
-				local holder = Instance.new("Attachment")
-				holder.Name = "CasteSound"
-				holder.Position = pos
-				holder.Parent = Workspace.Terrain
-				sound.RollOffMode = Enum.RollOffMode.InverseTapered
-				sound.RollOffMinDistance = 12
-				sound.RollOffMaxDistance = 150
-				sound.Parent = holder
-				life(holder, 3)
-			else
-				sound.Parent = SoundService
-				life(sound, 3)
-			end
-			sound:Play()
+			-- Sale por Sfx: mismo límite de voces, grupo "Efectos" y 3D con la misma atenuación
+			Sfx.emit(sound, if typeof(pos) == "Vector3" then pos else nil)
 		end)
 	end
 end

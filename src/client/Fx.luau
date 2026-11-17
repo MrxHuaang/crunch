@@ -132,13 +132,25 @@ local fovKick = 0
 local fovBase: number? = nil
 local fovWritten: number? = nil
 
+-- Ajuste "Movimiento suave" (lo pone el HUD): se lee en cada efecto para que cambie al momento
+local function calm(): boolean
+	return player:GetAttribute("ReducedMotion") == true
+end
+
 -- Sacude la cámara. 0.2 suave, 0.45 fuerte, 0.6+ muy fuerte. Se suma y satura en 1.
+-- Todo temblor del juego pasa por aquí (también CasteFx), así que basta cortarlo aquí.
 function Fx.shake(amount: number)
+	if calm() then
+		return
+	end
 	trauma = math.clamp(trauma + amount, 0, 1)
 end
 
 -- Zoom muy corto hacia dentro (grados). No se suma: se queda el más fuerte.
 function Fx.kick(degrees: number)
+	if calm() then
+		return
+	end
 	fovKick = math.clamp(math.max(fovKick, degrees), 0, FOV_MAX)
 end
 
@@ -1865,16 +1877,37 @@ function Fx.start()
 	startImpact()
 end
 
--- Líneas de velocidad de manga durante `seconds`.
+-- Líneas de velocidad de manga durante `seconds`. Giran a saltos 3 veces por segundo (antes 14:
+-- parpadeaba); con Movimiento suave no giran y entran y salen con un fundido.
+-- Si ya hay unas puestas, solo se alarga su final: un solo bucle, y no se apagan antes de tiempo.
+local speedUntil = 0
+local speedFade: Tween? = nil
+
 function Fx.speed(seconds: number)
-	speedLines.ImageTransparency = 0.25
+	local finish = os.clock() + seconds
+	local running = speedUntil > os.clock()
+	speedUntil = math.max(speedUntil, finish)
+	if speedFade then
+		speedFade:Cancel() -- un fundido de salida a medias no debe apagar las nuevas
+		speedFade = nil
+	end
+	if calm() then
+		TweenService:Create(speedLines, TweenInfo.new(0.25), { ImageTransparency = 0.5 }):Play()
+	else
+		speedLines.ImageTransparency = 0.25
+	end
+	if running then
+		return
+	end
 	task.spawn(function()
-		local finish = os.clock() + seconds
-		while os.clock() < finish do
-			speedLines.Rotation = rng:NextInteger(0, 11) * 30
-			task.wait(0.07)
+		while os.clock() < speedUntil do
+			if not calm() then
+				speedLines.Rotation = rng:NextInteger(0, 11) * 30
+			end
+			task.wait(math.min(0.33, math.max(speedUntil - os.clock(), 0.03)))
 		end
-		TweenService:Create(speedLines, TweenInfo.new(0.2), { ImageTransparency = 1 }):Play()
+		speedFade = TweenService:Create(speedLines, TweenInfo.new(if calm() then 0.35 else 0.2), { ImageTransparency = 1 })
+		speedFade:Play()
 	end)
 end
 
@@ -1961,14 +1994,27 @@ function Fx.chunk(piece: BasePart)
 end
 
 -- Viñeta a pantalla completa: líneas de velocidad, estallido y la Jalea ganada.
+-- Con Movimiento suave: la misma viñeta quieta (sin líneas ni golpe) que entra y sale con un fundido.
 function Fx.rebirth(gain: number)
+	local still = calm()
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "RebirthSplash"
 	gui.IgnoreGuiInset = true
 	gui.DisplayOrder = 50
 	gui.Parent = Players.LocalPlayer.PlayerGui
 
-	local back = Comic.frame(gui, Comic.Yellow)
+	local back: GuiObject
+	if still then
+		-- Un CanvasGroup funde la viñeta entera (fondo, estallido y textos) de una vez
+		local group = Instance.new("CanvasGroup")
+		group.BackgroundColor3 = Comic.Yellow
+		group.BorderSizePixel = 0
+		group.GroupTransparency = 1
+		group.Parent = gui
+		back = group
+	else
+		back = Comic.frame(gui, Comic.Yellow)
+	end
 	back.Size = UDim2.fromScale(1, 1)
 
 	local lines = Comic.image(back, Assets.SpeedLines)
@@ -1998,6 +2044,17 @@ function Fx.rebirth(gain: number)
 	sub.Position = UDim2.new(0, 0, 0.5, 20)
 	sub.Rotation = -5
 
+	if still then
+		lines.Visible = false
+		local fade = TweenInfo.new(0.4, Enum.EasingStyle.Sine)
+		TweenService:Create(back, fade, { GroupTransparency = 0 }):Play()
+		task.delay(1.6, function()
+			TweenService:Create(back, fade, { GroupTransparency = 1 }):Play()
+			task.wait(0.45)
+			gui:Destroy()
+		end)
+		return
+	end
 	Comic.punch(pop, 0.2)
 	task.spawn(function()
 		for _ = 1, 16 do -- ~1.4 s de viñeta: celebra sin tapar el juego mucho rato

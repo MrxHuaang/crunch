@@ -211,9 +211,15 @@ local function floatText(adornee: BasePart, text: string, color: Color3, size: n
 	return gui, label
 end
 
-local function alarmSound()
+-- Con `at`, la alarma suena en 3D desde ese hormiguero (el asalto es de otras)
+local function alarmSound(at: Vector3?)
 	for i = 0, 5 do
-		task.delay(i * 0.13, Sfx.pop, if i % 2 == 0 then 1.85 else 1.35)
+		local pitch = if i % 2 == 0 then 1.85 else 1.35
+		if at then
+			task.delay(i * 0.13, Sfx.near, at, "pop", pitch)
+		else
+			task.delay(i * 0.13, Sfx.pop, pitch)
+		end
 	end
 end
 
@@ -783,7 +789,11 @@ local function updateGuards(dt: number)
 				ring(group.door + Vector3.new(0, 0.3, 0), Comic.Red, 7)
 				emitAt(group.door + Vector3.new(0, 1, 0), 18, { Comic.DirtLight, Comic.Dirt }, NumberRange.new(10, 20), NumberRange.new(0.4, 0.8), 0.7, 40)
 				Fx.burst(group.door + Vector3.new(0, 2, 0), "¡A POR ELLA!", Comic.Red, 220)
-				Sfx.bite(true)
+				if group.thief == player or ownerOf(hill) == player then
+					Sfx.bite(true)
+				else
+					Sfx.near(group.door, "bite", 0.75)
+				end
 			end
 		end
 		if group.returning and allHome then
@@ -1252,8 +1262,13 @@ local function onGreet(a: Player, b: Player)
 	end
 	emitAt(mid, 26, { Comic.Yellow, Comic.Paper, Comic.Cyan }, NumberRange.new(6, 14), NumberRange.new(0.4, 0.8), 0.4, 10)
 	Fx.burst(mid, "¡CHOC!", Comic.Yellow, 180)
-	Sfx.pop(1.6)
-	task.delay(0.1, Sfx.pop, 1.95)
+	if mine then
+		Sfx.pop(1.6)
+		task.delay(0.1, Sfx.pop, 1.95)
+	else
+		Sfx.near(mid, "pop", 1.6)
+		task.delay(0.1, Sfx.near, mid, "pop", 1.95)
+	end
 	if mine then
 		local other = if a == player then b else a
 		AntAnim.cheer()
@@ -1275,7 +1290,7 @@ local function onRaid(thief: Player, hill: Model, count: number, speed: number, 
 	end
 	local top = hill:GetPivot().Position + Vector3.new(0, 10, 0)
 	if near(top) then
-		alarmSound()
+		alarmSound(if ownerOf(hill) == player or thief == player then nil else top)
 		Fx.burst(top, "¡ALARMA!", Comic.Red, 240)
 	end
 	if ownerOf(hill) == player then
@@ -1310,8 +1325,10 @@ local function onRaidBite(thief: Player, hill: Model, take: number, fill: number
 		if fill >= 0.99 then
 			Bubble.flash("¡Saco lleno! A casa antes de que me pillen", 3)
 		end
+	elseif ownerOf(hill) == player then
+		Sfx.bite(false) -- te roban a ti: se oye claro, como los guardias y la captura
 	else
-		Sfx.bite(false)
+		Sfx.near(pantry.spot, "bite")
 	end
 end
 
@@ -1332,7 +1349,11 @@ local function onCaught(thief: Player, hill: Model, by: string, amount: number, 
 		end)
 		emitAt(at, 22, { Comic.Paper, Comic.DirtLight }, NumberRange.new(10, 20), NumberRange.new(0.3, 0.6), 0.8, 20)
 		ring(root.Position - Vector3.new(0, 1.5, 0), Comic.Yellow, 7)
-		Sfx.bite(true)
+		if mine or owner == player then
+			Sfx.bite(true)
+		else
+			Sfx.near(at, "bite", 0.75)
+		end
 		dizzy(thief, 1.6)
 		local pantry = typeof(hill) == "Instance" and pantries[hill]
 		if pantry and by ~= "owner" then
@@ -1436,6 +1457,13 @@ local function thiefNearMe(root: BasePart): Player?
 		end
 	end
 	return nil
+end
+
+-- ¿Morder ahora asalta una despensa o atrapa a una ladrona? (lo pregunta init.client para no decir
+-- "Nada a tiro" mientras asaltas)
+function Social.hasBiteTarget(): boolean
+	local root = rootOf(player)
+	return root ~= nil and (thiefNearMe(root) ~= nil or nearestPantry(root) ~= nil)
 end
 
 local function tryBite()
