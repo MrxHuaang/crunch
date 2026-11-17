@@ -32,16 +32,17 @@ Todo el juego **se construye por código** al arrancar el servidor: mapa, luz, h
 | --- | --- |
 | **Morder y cargar** | Cada comida tiene vida y se desmonta a mordiscos. Mordisco cargado, doble mandíbula, mordida en cadena (un rayo que salta a las vecinas del racimo) y comida dorada que vale x5. |
 | **El hormiguero** | Árbol de mejoras en corte, como una viñeta larga: cuatro pozos (Mandíbulas, Patas, Colonia, Feromonas) más la rama de Aliadas, 46 cámaras grandes y 504 galerías pequeñas. «Comprar lo barato» gasta media despensa de golpe. |
-| **Hormigueros de zona** | Cada zona del camino tiene a su entrada un hormiguero compartido: quien tenga la zona abierta entrega ahí como en casa, y sus obreras de esa zona también. El de casa sigue siendo tuyo (crece, huevo, hongos, despensa). |
+| **Hormigueros de zona** | Cada zona del camino tiene a su entrada un hormiguero compartido: quien tenga la zona abierta entrega ahí como en casa, y sus obreras de esa zona también; la abeja y el tirachinas llevan la carga al más cercano que tengas abierto. El de casa sigue siendo tuyo (crece, huevo, hongos, despensa). |
 | **La colonia** | Obreras que repiten tu ruta, rastros de feromonas, órdenes y hasta tres escuadrones (lo más cercano, lo más rico, rematar, a por la grande…). |
 | **Aliadas** | Abeja mensajera, imán, escarabajo de carga, escolta, pisotón, tirachinas, lupa y mega crunch. |
 | **Castas** | Roles con su experiencia, sus mutaciones y tres habilidades cada uno. |
 | **Moverse** | Sprint, alas de ida y vuelta, túnel exprés con salida a cada zona abierta y sendas de feromonas que te aceleran. |
 | **Jardín vivo** | La comida crece con la gente conectada; cada pocos minutos pasa algo (mariposa con regalo, hora feliz, pan gigante), con setas saltarinas y dientes de león para soplar. |
 | **Vecinas** | Jardín compartido para 6, sin que nadie pierda progreso: despensas que se pueden asaltar a mordiscos, emotes con combo y un cartel mundial con las diez mejores. |
-| **Enjambrar** | Prestigio: la partida se convierte en Jalea Real para el Árbol Real. Comerse la Tarta duplica la jalea. |
+| **Enjambrar** | Prestigio: la partida se convierte en Jalea Real para el Árbol Real, cuyos efectos se suman por nivel (+12 % de comida, mordida o colonia) y cuyos precios se multiplican; el Néctar real no se acaba nunca. Comerse la Tarta duplica la jalea. |
 | **Tu hormiga** | Cambia con lo que compras (mandíbulas, pinchos, alas, armadura, tamaño) y con el vestidor (colores, sombreros, estelas). El montículo crece, gana banderas y corona. |
-| **Primeros pasos** | Seis metas cortas con fiesta y premio, y las primeras 30 migas valen el doble. |
+| **Primeros pasos** | Seis metas cortas con fiesta y premio, y las primeras 30 migas valen el doble. Al terminarlas empieza el premio diario, con un día de gracia por semana para no perder la racha. |
+| **Celular y sonido** | En pantalla táctil y pequeña el HUD cambia de distribución (`Hud.compact`). El botón del sonido abre un menú con Música, Efectos y Movimiento suave (sin temblores, zoom ni líneas que giran). |
 
 ## Zonas
 
@@ -72,12 +73,14 @@ Para añadir una zona: su entrada en `Config.Zones` y `Config.Layers`, tres comi
 
 | Capa | Tecnología | Uso |
 | --- | --- | --- |
-| Juego | Roblox, Luau | Servidor autoritativo, cliente y módulos compartidos (unas 54.000 líneas en 107 archivos) |
+| Juego | Roblox, Luau | Servidor autoritativo, cliente y módulos compartidos (unas 68.000 líneas en 111 archivos) |
 | Sincronización | Rojo (`default.project.json`) | `src/shared` → ReplicatedStorage, `src/server` → ServerScriptService, `src/client` → StarterPlayerScripts |
-| Guardado | DataStoreService | Carga con reintentos; guarda al salir, cada minuto y al cerrar el servidor |
+| Guardado | DataStoreService | Bloqueo de sesión propio (`Data.luau`, sin ProfileStore); carga con reintentos; guarda al salir, cada minuto y al cerrar el servidor |
 | Red | `RemoteEvent` en `ReplicatedStorage.Remotes` | El cliente pide (morder, depositar, comprar); el servidor valida distancia, enfriamiento y saldo |
 | Enjambre | `workspace:BulkMoveTo` | Las obreras son números en el servidor; cada cliente dibuja hasta unas 300, sin Humanoid |
-| Monetización | MarketplaceService | Pases permanentes y productos de un uso (`Config.Passes`, `Config.Products`) |
+| Monetización | MarketplaceService, PolicyService | Pases permanentes y productos de un uso (`Config.Passes`, `Config.Products`). Donde Roblox no deja vender azar, el próximo huevo de mascota se decide y se enseña antes de pagar |
+| Medición | AnalyticsService, BadgeService | `Analytics`: embudo de primeros pasos, capas, enjambres, economía y compras con Robux; insignias de `Config.Badges` |
+| Calidad | selene, GitHub Actions | `selene src` en cada push y pull request (`.github/workflows/ci.yml`) |
 | Balance | Python (`tools/sim.py`) | Simula el bucle real, viaje a viaje, para tres perfiles de jugadora |
 | Arte | Python (`art/gen_art.py`), HTML (`art/promo`) | Trama, cielo, viñeta, iconos del árbol, icono y miniatura del juego |
 
@@ -97,7 +100,8 @@ flowchart LR
 
 - **El servidor manda.** Toda la economía se calcula allí. `Profiles` guarda el estado en memoria y lo refleja en atributos del jugador, que es lo que lee el cliente.
 - **Bus de sucesos.** `Events` emite comer, terminar, entregar, comprar, excavar, enjambrar y bocado dorado. Misiones, cadena, ventajas de las galerías y demás escuchan sin tocar el bucle por dentro.
-- **Módulos opcionales.** `init.server.luau` arranca `Quests`, `WorldEvents`, `PetService`, `Hazards`, `Allies`, `GoldFood`, `Chain`, `Tunnel`, `Extras`, castas y demás solo si existen. Si uno falta, el juego sigue igual.
+- **Módulos opcionales.** `init.server.luau` arranca `Quests`, `WorldEvents`, `PetService`, `Hazards`, `Allies`, `GoldFood`, `Chain`, `Tunnel`, `Extras`, castas, `Analytics` y demás solo si existen. Si uno falta, el juego sigue igual. Al terminar imprime `servidor listo en X s` con lo que tardó cada parte que pesa (`World.build`, `FoodService.start`, cada módulo…).
+- **Tasa base de la colonia.** `data.baseRate` es lo que da la colonia sin frenesí, ratos x2, poción ni hongo, con los mismos topes. De ella salen el progreso sin conexión, sacos, huevos, misiones, regalos y reglas, para que un potenciador no infle los premios.
 - **Un solo `Config`.** Zonas, comidas, árbol, tienda, textos y balance viven en `src/shared/Config.luau`; `Stats.derive` saca de ahí las cifras de la hormiga, las mismas que imprime el simulador.
 - **Sin streaming.** `Workspace.StreamingEnabled` debe estar apagado: el mapa es pequeño y los clientes dibujan las obreras a partir de los hormigueros, que tienen que estar siempre cargados.
 
@@ -121,6 +125,14 @@ flowchart LR
 
 3. En Studio: pestaña **Plugins** → **Rojo** → **Connect**.
 4. Pulsa **Play**.
+
+### Revisar el código
+
+```bash
+selene src
+```
+
+Debe dar 0 errores (los avisos no frenan). Lo mismo corre GitHub Actions en cada push y pull request. `selene.toml` usa `crunch+roblox`: `crunch.yml` corrige el std de Roblox que genera selene (marcaba `Vector3.yAxis:Cross` como error). No hay `stylua --check`: el código no está formateado y no se va a reformatear.
 
 ### Controles
 
@@ -192,7 +204,7 @@ python tools/sim.py
 python tools/sim.py --audit
 ```
 
-El simulador juega el bucle de verdad, viaje a viaje: ir hasta los racimos de una zona andando y corriendo, morder con su enfriamiento, cadena y área dentro del racimo, llenarse y volver (al hormiguero de casa en el jardín y al de la zona fuera de él, `depot_trip`), con túnel, alas y abeja. Suma la colonia con sus topes (una comida no cae en menos de 3 s; ninguna zona da más de lo que rebrota) y el resto de ingresos, para tres perfiles: **activo** (85 % del tiempo jugando a mano), **casual** (45 %) y **ausente** (10 %).
+El simulador juega el bucle de verdad, viaje a viaje: ir hasta los racimos de una zona andando y corriendo, morder con su enfriamiento, cadena y área dentro del racimo, llenarse y volver (al hormiguero de casa en el jardín y al de la zona fuera de él, `depot_trip`), con túnel, alas y abeja (que, como el tirachinas, entrega en el hormiguero de zona). Cuenta también las galerías con efecto propio (Olor a fiesta con su descanso de 20 s, Turno doble, hongos…), los trofeos, el Nido heredado, mascotas opcionales (`PETS=tipicas`) y tres vueltas de enjambre. Suma la colonia con sus topes (una comida no cae en menos de 3 s; ninguna zona da más de lo que rebrota) y el resto de ingresos, para tres perfiles: **activo** (85 % del tiempo jugando a mano), **casual** (45 %) y **ausente** (10 %).
 
 Por capa imprime minutos, compras, espera más larga entre compras, reparto del ingreso (mano, colonia, ayudantes, extras, misiones, castas y social) y mordiscos por comida y por viaje, y termina con una lista APROBADO/FALLA de los objetivos de ritmo (`--detalle` la enseña entera). `--audit` añade cuánto sube el ingreso cada mejora al comprarla por primera vez y su retorno.
 
@@ -201,10 +213,11 @@ Por capa imprime minutos, compras, espera más larga entre compras, reparto del 
 | Primera compra | pocos segundos |
 | Primera obrera | ~3 min |
 | Capa 2 | ~9 min |
-| Cada capa después | ~30 min |
-| Capa 14 | ~6 h |
+| Cada capa después | ~22-33 min |
+| Capa 14 | ~5,5 h |
+| Enjambrar en la capa 7 | la segunda vuelta va un ~43 % más rápida |
 
-Casual tarda entre 1,6 y 2 veces más. La velocidad al andar tiene techo (`Config.Player.MaxWalk`, 45) y lo que las mejoras den de más se vuelve comida; igual con lo que arrancan a las vecinas área, cadena, doble mandíbula, escolta y mega crunch (`NeighborCap`).
+Casual tarda entre 1,6 y 2 veces más. Hoy da 312 APROBADO y 1 FALLA (la colonia se queda en el 12 % en la capa 13). La velocidad al andar tiene techo (`Config.Player.MaxWalk`, 45) y lo que las mejoras den de más se vuelve comida; igual con lo que arrancan a las vecinas área, cadena, doble mandíbula, escolta y mega crunch (`NeighborCap`).
 
 Casi todo se puede probar sin tocar el archivo: `SIN=bee,lens python tools/sim.py` simula sin esas mejoras y `BITE_POWER=1.3 python tools/sim.py` cambia una constante. Es una simulación, no una prueba con jugadores, y `sim.py` copia las constantes de `Config`: si cambias unas, cambia las otras.
 
@@ -216,16 +229,18 @@ Las 504 galerías se generan solas desde `Config.MiniTune` (costos, cantidades p
 |---|---|
 | `src/shared` | `Config` (balance, zonas, comidas, árbol, tienda y textos), `Stats` (fórmulas), `FoodModels`, `AntModel` y `AntLook` (cómo cambia la hormiga con las mejoras y la ropa), `Assets` (ids de imágenes, sonidos y música) |
 | `src/server` | `World` (jardín, camino, puertas, hormiguero que crece y su cartel), `HillModel`, `Decor`, `Decor2` y `Decor3` (decorado por tema), `Nest` (huevo dorado y hongos), `FoodService`, `PlayerService` (morder, depositar), `Colony` y `Orders` (obreras, órdenes y escuadrones), `Shop` (compras, excavar, vestidor, enjambrar), `Events`, `Monetize`, `Leaderboard`, `Data`, `Profiles`, `DevTools` (panel DEV y `CrunchDebug`, solo en Studio), `Depots` (hormigueros de zona) |
-| `src/server`, opcionales | `Quests`, `WorldEvents`, `PetService`, `Hazards`, `Allies`, `GoldFood`, `Chain`, `Tunnel`, `Extras`, `Garden`, `Opening`, `Perks` (reglas de las galerías), `CasteService` y `Castes/`, `Social` (despensas y asaltos), `Stalls` (puestos del mapa), `Emotes` |
+| `src/server`, opcionales | `Quests`, `WorldEvents`, `PetService`, `Hazards`, `Allies`, `GoldFood`, `Chain`, `Tunnel`, `Extras`, `Garden`, `Opening`, `Perks` (reglas de las galerías), `CasteService` y `Castes/`, `Social` (despensas y asaltos), `Stalls` (puestos del mapa), `Emotes`, `Analytics` (medición e insignias, solo escucha) |
 | `src/client` | `Tree` (árbol-hormiguero por capas), `Hud`, `Swarm` (dibujo de obreras), `Abilities`, `Places`, `Wardrobe`, `Store`, `Fx`, `Bubble`, `Sfx`, `Comic` (estilo), `State`, `Targeting`, `AntAnim`, `Chain`, `Tunnel` y la parte de cliente de cada módulo opcional (`Life`, `Ambience`, `Allies`, `Extras`…), `DevPanel` (el panel DEV, solo en Studio) |
 | `art` | `gen_art.py` genera texturas e iconos en `art/out`; `promo/` tiene el icono y la miniatura del juego |
 | `tools` | `sim.py`, el simulador de balance |
+| raíz | `selene.toml` y `crunch.yml` (linter), `rokit.toml` (versiones de Rojo, selene y StyLua), `.github/workflows/ci.yml` |
 
 ## Pendiente de configurar en Roblox
 
 - **Guardado en Studio**: Configuración del juego → Seguridad → activar *Enable Studio Access to API Services*. Sin eso, en Studio se juega sin guardar y el cartel de puntuaciones solo muestra a los jugadores del servidor (en el juego publicado guarda siempre y el cartel es mundial).
 - **Jugadores por servidor**: 6 como máximo. Hay 6 hormigueros.
 - **Microtransacciones**: crea los pases y productos en el panel de creador (Monetización) y pega sus ids en `Config.Passes` y `Config.Products`. Cada uno trae un precio sugerido en `robux`. Con id `0` el artículo no aparece en el juego publicado; en Studio se listan todos para revisar la tienda.
+- **Insignias**: crea las cinco de `Config.Badges` (capa 2, capa 7, primer enjambre, la Tarta y capa 14) en el panel de creador (Insignias) y pega sus ids en `badgeId`. Con `0` están apagadas y no se entregan.
 - **Música**: `Assets.Music` es una lista de temas del catálogo libre de Roblox elegidos por búsqueda. Escúchalos y cambia los que no te gusten.
 
 ## Arte

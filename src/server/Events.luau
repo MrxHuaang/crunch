@@ -10,7 +10,7 @@
 --   "Rebirth"  (profile, jelly)                   enjambre (solo el premio; el reinicio es "RunReset")
 --   "RunReset" (profile)                          la partida vuelve a empezar (al enjambrar y desde el
 --                                                panel DEV): quien guarda estado de la partida lo limpia aquí
---   "Golden"   (profile)                          bocado dorado
+--   "Golden"   (profile)                          bocado dorado (hoy solo lo lanza Pepita segura)
 --   "Bite"     (profile, food, chained, position, damage, finished)
 --                                                mordisco tuyo acertado (chained: seguido del anterior;
 --                                                position: centro de la comida + 1; damage: daño del

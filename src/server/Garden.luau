@@ -507,11 +507,9 @@ end
 
 local function runHappening(kind: string, center: Vector3?)
 	lastHappening = os.clock()
-	if kind == "gift" then
-		startGift(center)
-	elseif kind == "happy" then
+	if kind == "happy" then
 		startHappy()
-	elseif not startLoaf() then
+	elseif kind == "gift" or not startLoaf() then -- sin hogaza posible, cae en regalo
 		startGift(center)
 	end
 end

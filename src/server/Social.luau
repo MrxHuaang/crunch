@@ -13,7 +13,8 @@
 -- 3. Dúo: morder la misma comida a la vez da un extra a las dos.
 -- 4. Saludo de antenas: quietas cara a cara un momento, las dos andan más rápido un rato.
 --
--- Guardado (perezoso): data.social = { peace = bool, friends = { [UserId texto] = mejor nivel } }.
+-- Guardado (perezoso): data.social = { peace = bool, friends = { [UserId texto] = mejor nivel },
+--   welcomeAt = os.time() del último regalo de bienvenida recibido }.
 -- Atributos del hormiguero: PantryPos (Vector3), PantryFill (0..1), PantryValue, PantryOpen (se puede
 --   asaltar), Peace, PantryColor1..3.
 -- Atributos de la jugadora: Peace, Loot, LootFrom (UserId), LootFill (0..1), SocialBonus (amistad),
@@ -45,6 +46,7 @@ local GR = S.Greet
 
 local FLAT = Vector3.new(1, 0, 1)
 local TICK = 0.1
+local WELCOME_EVERY = 20 * 3600 -- s entre regalos de bienvenida a la misma partida (frena cuentas secundarias)
 
 local remote: RemoteEvent
 local states: { [any]: any } = {} -- [profile] = estado social de la sesión
@@ -651,10 +653,12 @@ local function onGift(giver, gst, target: any)
 	local stats = giver.stats
 	local fill = math.clamp(giver.carry / math.max(stats.capacity, 1), 0, 1)
 	local seconds = math.clamp(fill * GF.CapSeconds, GF.FloorSeconds, GF.CapSeconds)
-	local welcome = not rst.welcomed and t < rst.newUntil
+	-- La bienvenida se apunta en la partida: salir y volver a entrar no la repite hasta WELCOME_EVERY
+	local social = saved(recv.data)
+	local welcome = t < rst.newUntil and os.time() - (tonumber(social.welcomeAt) or 0) >= WELCOME_EVERY
 	local paid
 	if welcome then
-		rst.welcomed = true
+		social.welcomeAt = os.time()
 		paid = seconds * GF.WelcomeMult
 	else
 		paid = math.min(seconds, rst.budget)
@@ -833,7 +837,6 @@ local function ensure(profile)
 		lastRaidAt = -math.huge,
 		budget = GF.BudgetStart,
 		newUntil = now() + GF.WelcomeWindow,
-		welcomed = false,
 		stolen = 0,
 		gifted = 0,
 		caught = 0,
@@ -882,8 +885,10 @@ local function ensure(profile)
 		sendFriends(other)
 	end
 
-	-- Bienvenida: las veteranas se enteran (no al abrir el servidor, cuando entran todas a la vez)
-	if now() - startedAt > 20 then
+	-- Bienvenida: las veteranas se enteran (no al abrir el servidor, cuando entran todas a la vez), solo
+	-- si a esta partida aún le toca el regalo doble (ver WELCOME_EVERY)
+	local welcomeAt = tonumber(saved(profile.data).welcomeAt) or 0
+	if now() - startedAt > 20 and os.time() - welcomeAt >= WELCOME_EVERY then
 		for other in states do
 			if other ~= profile and other.player.Parent then
 				remote:FireClient(other.player, "Welcome", player)

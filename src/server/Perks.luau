@@ -260,9 +260,7 @@ local function onBite(profile, food, chained: boolean?)
 			s.nugget = 0
 			goldenBonus(profile, hit)
 			cue(profile, "nugget", position)
-			s.ownGolden = true
 			Events.fire("Golden", profile) -- cuenta para las misiones y enciende la Fiebre del oro
-			s.ownGolden = false
 		end
 	end
 
@@ -277,15 +275,10 @@ local function onBite(profile, food, chained: boolean?)
 	end
 end
 
+-- El único "Golden" es el de Pepita segura (arriba); Oro puro ya va en goldenBonus
 local function onGolden(profile)
-	local s = state(profile)
 	if level(profile, "fever") > 0 then
-		s.fever = value(profile, "fever")
-	end
-	-- Oro puro sobre un mordisco dorado de verdad (los de Pepita ya lo cuentan en goldenBonus)
-	if not s.ownGolden and level(profile, "pureGold") > 0 and s.lastAte then
-		local hit = s.lastAte
-		profile.carryValue += hit.amount * hit.value * (value(profile, "pureGold") - Config.MiniTune.GoldMult)
+		state(profile).fever = value(profile, "fever")
 	end
 end
 

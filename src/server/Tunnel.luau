@@ -24,7 +24,7 @@ local FLAT = Vector3.new(1, 0, 1)
 local MOUTH = 6.6 -- diámetro de la boca negra
 -- Las salidas quedan a un lado del camino, entre la puerta y los racimos (que empiezan a
 -- Config.FoodLayout.Margin studs de la puerta y a 14 del muro)
-local EXIT_X = -(Config.Map.Half - 30) -- lejos de los puestos avanzados, que van pegados a los muros
+local EXIT_X = -(Config.Map.Half - 30)
 local EXIT_IN = 8
 local HOLE = Color3.fromRGB(16, 10, 8)
 local THROAT = Color3.fromRGB(40, 26, 18)

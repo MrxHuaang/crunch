@@ -1,0 +1,12 @@
+# Correcciones al std "roblox" que genera selene: su API dump marca estos
+# vectores como propiedad y da un error falso en Vector3.yAxis:Cross(...).
+# selene.toml lo pone delante ("crunch+roblox") para que gane al mezclar, y
+# se llama "roblox" para que sigan activas las reglas roblox_* de selene.
+name: roblox
+globals:
+  Vector3.xAxis:
+    any: true
+  Vector3.yAxis:
+    any: true
+  Vector3.zAxis:
+    any: true

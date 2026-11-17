@@ -1,6 +1,6 @@
 -- Mejoras que cambian cómo juegas, en el cliente (ver src/server/Extras.luau):
 --   mordisco cargado (un brillo que crece en tus mandíbulas y un pitido que sube), doble mandíbula,
---   buche, puesto avanzado (entrega y relevo de hormiguitas hacia casa), comida gigante, lluvia propia
+--   buche, comida gigante, lluvia propia
 --   (migas que caen y se recogen) y la senda de feromonas: tus rastros marcados brillan en el suelo y,
 --   mientras pisas uno, vas más rápido (como correr, la velocidad la decide el cliente: Abilities.speedBoost).
 -- Los momentos llegan por el remoto "Extras". Nada de texto fijo en pantalla: todo pasa en el mundo.
@@ -13,12 +13,10 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
-local Format = require(ReplicatedStorage.Shared.Format)
 local Abilities = require(script.Parent.Abilities)
 local Bubble = require(script.Parent.Bubble)
 local Comic = require(script.Parent.Comic)
 local Fx = require(script.Parent.Fx)
-local Hud = require(script.Parent.Hud)
 local Sfx = require(script.Parent.Sfx)
 local State = require(script.Parent.State)
 local Targeting = require(script.Parent.Targeting)
@@ -35,14 +33,12 @@ local LANE_PIECE = 1500 -- una pieza no puede medir más de 2048 studs: las send
 local LANE_Y = Config.GroundY + 0.15
 local CHARGE_COLOR = Color3.fromRGB(255, 220, 80)
 local CHARGE_FULL = Color3.fromRGB(255, 90, 60)
-local ANT = Color3.fromRGB(40, 28, 26)
 
 -- Lo que dice tu hormiga al estrenar cada mejora (la lluvia la explica el árbol con su tecla)
 local INTRO = {
 	charged = "Si me quedo quieta junto a la comida, cargo un mordisco enorme",
 	doubleJaw = "¡Ahora muerdo dos comidas a la vez!",
 	buche = "Con el buche, parte de cada entrega se viene conmigo",
-	outpost = "Tengo puesto avanzado en mi zona más honda: puedo entregar allí",
 	giantFood = "De vez en cuando, una comida a mi alrededor crecerá enorme",
 	lane = "Mis rastros brillan: si camino por ellos, voy volando",
 }
@@ -199,7 +195,7 @@ local function hillOf(target: Player): Model?
 	return nil
 end
 
--- Tramos de senda de una jugadora: de casa (o de su puesto, si la comida está más allá) a cada rastro marcado
+-- Tramos de senda de una jugadora: de casa a cada rastro marcado
 local function segmentsOf(target: Player): { { a: Vector3, b: Vector3 } }
 	local list = {}
 	local level = target:GetAttribute("N_lane")
@@ -209,15 +205,11 @@ local function segmentsOf(target: Player): { { a: Vector3, b: Vector3 } }
 	end
 	local home = hill:GetPivot().Position
 	local scale = hill:GetAttribute("Scale")
-	local outpost, edge = hill:GetAttribute("OutpostPos"), hill:GetAttribute("OutpostZ")
 	local marked = hill:GetAttribute("Marked") -- con escuadrones, solo los primeros huecos son rastros
 	for i = 1, if type(marked) == "number" then math.min(marked, 3) else 3 do
 		local food = hill:GetAttribute("TrailPos" .. i)
 		if typeof(food) == "Vector3" then
 			local base, gap = home, 9 * (if type(scale) == "number" then scale else 1)
-			if typeof(outpost) == "Vector3" and type(edge) == "number" and food.Z <= edge then
-				base, gap = outpost, 4
-			end
 			local flat = (food - base) * Vector3.new(1, 0, 1)
 			local length = flat.Magnitude
 			local radius = hill:GetAttribute("TrailRadius" .. i)
@@ -392,31 +384,7 @@ end
 ---------------------------------------------------------------------------------------------------
 -- Sucesos del servidor
 
--- Relevo del puesto: una fila de hormiguitas corre del puesto hacia casa
-local function relay(from: Vector3, home: Vector3)
-	local flat = (home - from) * Vector3.new(1, 0, 1)
-	if flat.Magnitude < 1 then
-		return
-	end
-	local dir = flat.Unit
-	local ground = Vector3.new(from.X, Config.GroundY + 0.35, from.Z)
-	for i = 1, 7 do
-		local ant = newPart(Vector3.new(0.5, 0.35, 0.8), ANT, "ball")
-		local side = dir:Cross(Vector3.yAxis) * rng:NextNumber(-0.6, 0.6)
-		local a = ground + dir * 3 + side
-		ant.CFrame = CFrame.lookAt(a, a + dir) + Vector3.new(0, -50, 0)
-		task.delay((i - 1) * 0.1, function()
-			ant.CFrame = CFrame.lookAt(a, a + dir)
-			TweenService:Create(ant, TweenInfo.new(1.6, Enum.EasingStyle.Linear), {
-				CFrame = CFrame.lookAt(a + dir * 38, a + dir * 39),
-				Transparency = 1,
-			}):Play()
-		end)
-		Debris:AddItem(ant, (i - 1) * 0.1 + 1.7)
-	end
-end
-
-local function onEvent(kind: string, a: any, b: any, c: any, d: any, e: any, f: any)
+local function onEvent(kind: string, a: any, b: any, c: any, d: any, e: any)
 	local mine = a == player
 	if kind == "Charged" and isPlayer(a) and typeof(b) == "Vector3" then
 		local ratio = math.clamp(tonumber(d) or 0.5, 0, 1)
@@ -449,32 +417,6 @@ local function onEvent(kind: string, a: any, b: any, c: any, d: any, e: any, f: 
 			Fx.burst(mouth + Vector3.new(0, 2, 0), "¡Buche!", Comic.Green, 120)
 		end
 		Sfx.pop(0.75)
-	elseif kind == "OutpostUp" and isPlayer(a) and typeof(b) == "Vector3" then
-		if near(b) then
-			ring(b + Vector3.new(0, 0.2, 0), 10, Comic.DirtLight, 0.6)
-			Fx.crumbs(b + Vector3.new(0, 3, 0), Comic.DirtLight, 10)
-		end
-		if mine then
-			local zone = Config.Zones[State.depth()]
-			Bubble.flash("Mi puesto avanzado ya está en " .. (if zone then zone.name else "mi zona más honda"), 5)
-		end
-	elseif kind == "Outpost" and isPlayer(a) and typeof(b) == "Vector3" then
-		if mine then
-			local credited = tonumber(c) or 0
-			if d == true then
-				Fx.burst(b, "¡DOBLE!\n+" .. Format.short(credited), Comic.Yellow, 240)
-			else
-				Fx.burst(b, "+" .. Format.short(credited), Comic.Cyan, 200)
-			end
-			-- (Fx.deposit tira las migajas hacia el hormiguero de casa: aquí caen en el puesto)
-			Fx.crumbs(b, nil, 8)
-			Fx.shake(if d == true then 0.35 else 0.15)
-			Sfx.deposit()
-			Hud.punchFood()
-		end
-		if near(b) and typeof(e) == "Vector3" then
-			relay(b, e)
-		end
 	elseif kind == "Giant" and isPlayer(a) and typeof(c) == "Vector3" then
 		local radius = tonumber(d) or 4
 		if near(c) then

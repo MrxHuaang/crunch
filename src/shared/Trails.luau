@@ -1,5 +1,4 @@
--- Estelas del vestidor: lo que deja tu hormiga al andar. Única fuente de las estelas (sustituye a
--- Config.Trails, que queda sin usar): la lista, sus precios, la regla VIP y cómo se montan.
+-- Estelas del vestidor: lo que deja tu hormiga al andar. Única fuente de las estelas: la lista, sus precios, la regla VIP y cómo se montan.
 --
 -- Cada estela se compone de capas que salen del abdomen:
 --   ribbons:   cintas (Trail) de distinto ancho y color; `half` es medio ancho en alturas de abdomen

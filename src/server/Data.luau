@@ -22,9 +22,12 @@ local saving = {} -- [userId] = true: los guardados de una jugadora van de uno e
 local queued = {} -- [userId] = guardados esperando turno (la carga los espera, ver Data.load)
 local released = {} -- [userId] = true: ya se soltó la colonia; ningún guardado tardío la vuelve a coger
 
--- El autoguardado renueva el bloqueo cada Interval: si lleva 3 sin renovarse, su servidor cayó
-local LOCK_STALE = Config.Save.Interval * 3
-local LOCK_WAIT = 30 -- segundos que espera la carga a que otro servidor suelte el bloqueo
+-- El autoguardado (PlayerService.saveLoop) renueva el bloqueo cada Interval = 60 s: si lleva 1,5
+-- sin renovarse (90 s), su servidor cayó sin BindToClose
+local LOCK_STALE = Config.Save.Interval * 1.5
+-- La carga espera lo que dura un bloqueo entero: así uno de un servidor caído siempre caduca antes
+-- de rendirse y no se expulsa a nadie por él (en un salto normal el otro lo suelta en segundos)
+local LOCK_WAIT = LOCK_STALE + 10
 
 local function getStore()
 	if store or storeFailed then
@@ -66,6 +69,15 @@ function Data.default()
 		rate = 0, -- comida por segundo de la colonia, para el progreso sin conexión
 		lastSeen = os.time(),
 	}
+end
+
+-- Arregla partidas guardadas con un formato viejo. Hoy no hay ninguno: todas son versión 2.
+-- Para cambiar el formato, sube version en Data.default() y añade un paso por versión, p. ej.:
+--   if version < 3 then data.nuevo = data.viejo; data.viejo = nil; version = 3 end
+-- Sin campo version cuenta como la de Data.default() (Data.load mezcla los valores por defecto antes).
+local function migrate(data)
+	local version = tonumber(data.version) or Data.default().version
+	data.version = version
 end
 
 local function key(userId: number): string
@@ -123,6 +135,7 @@ function Data.load(userId: number)
 				end
 			end
 			data.lock = nil -- el bloqueo vive solo en el DataStore
+			migrate(data)
 			released[userId] = nil
 			return data, true
 		end

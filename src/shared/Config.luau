@@ -540,9 +540,6 @@ Config.Extras = {
 	DoubleJaw = { Share = 0.6, Step = 0.2, Reach = 5 },
 	-- Al entregar te quedas Share (Step más por nivel) de la carga; vuelve a tus mandíbulas al salir
 	Buche = { Share = 0.1, Step = 0.05 },
-	-- Radius: radio de entrega. Relay: parte del camino puesto-hormiguero que las obreras aún pagan
-	-- (lo demás lo pasa el puesto en cadena). Mueve mucho el ritmo de la colonia: mira tools/sim.py.
-	Outpost = { Radius = 9, Relay = 0.85 },
 	-- Cada Interval s (Step menos por nivel) una comida de tu zona crece: Mult veces su vida (MultStep más por nivel)
 	Giant = { Interval = 60, Step = 10, Mult = 8, MultStep = 2 },
 	-- Durante Duration s caen Count migas (CountStep más por nivel) a Radius studs de ti. Cada una vale
@@ -574,7 +571,6 @@ Config.MiniTune = {
 	Span = { 10, 250 }, -- costo de la galería más barata y de la más cara de una capa, a escala de capa 1
 	BranchCost = { M = 1, P = 1.1, C = 1.2, F = 0.9 },
 	Rotate = 4, -- en cada capa los tipos de las galerías sencillas se corren estos huecos
-	GoldCap = 0.2, -- probabilidad máxima de mordisco dorado
 	GoldMult = 10, -- lo que vale la comida de un mordisco dorado
 	-- Referencia de las cantidades fijas: Mordida fuerte y Lomo fuerte suben 10 niveles por capa y
 	-- Obreras fuertes 2; se toma su nivel a media capa (MidLevel menos que el tope, y 1 menos las obreras).
@@ -888,16 +884,6 @@ Config.Hats = {
 	{ id = "corona", name = "Corona", cost = 1e12 },
 }
 
--- Estelas: el rastro que deja tu hormiga al andar. pass: solo con ese pase de juego.
-Config.Trails = {
-	{ id = "sin", name = "Ninguna", cost = 0 },
-	{ id = "polvo", name = "Polvo", cost = 1e4, colors = { Color3.fromRGB(214, 168, 116), Color3.fromRGB(150, 98, 60) } },
-	{ id = "azucar", name = "Azúcar", cost = 1e6, colors = { Color3.fromRGB(255, 255, 255), Color3.fromRGB(190, 230, 255) } },
-	{ id = "fuego", name = "Fuego", cost = 1e9, colors = { Color3.fromRGB(255, 220, 80), Color3.fromRGB(230, 57, 70) } },
-	{ id = "arcoiris", name = "Arcoíris", cost = 1e13, colors = { Color3.fromRGB(230, 57, 70), Color3.fromRGB(255, 210, 63), Color3.fromRGB(110, 200, 90), Color3.fromRGB(62, 193, 243), Color3.fromRGB(160, 96, 230) } },
-	{ id = "oro", name = "Oro VIP", cost = 0, pass = "vip", colors = { Color3.fromRGB(255, 240, 160), Color3.fromRGB(255, 190, 40) } },
-}
-
 -- Microtransacciones. Crea cada pase y producto en el panel de creador de Roblox
 -- (Monetización) y pega aquí su id. Con id = 0 el artículo no aparece en la tienda
 -- (en Studio se listan todos para poder revisarla).
@@ -1179,6 +1165,5 @@ Config.NodeById = index(Config.Tree)
 Config.RoyalById = index(Config.Royal)
 Config.SkinById = index(Config.Skins)
 Config.HatById = index(Config.Hats)
-Config.TrailById = index(Config.Trails)
 
 return Config

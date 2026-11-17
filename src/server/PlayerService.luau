@@ -28,7 +28,7 @@ end
 
 -- Antitrampas de teletransporte. La posición la manda el cliente, así que entre un mordisco o una
 -- entrega y la siguiente tiene que haber dado tiempo a recorrer la distancia con turbo (y mucho
--- margen). También lo usa la entrega del puesto avanzado (Extras), por PlayerService.canReach. Si no, la acción espera: quien se teletransporta no gana nada sobre quien camina, y
+-- margen). Si no, la acción espera: quien se teletransporta no gana nada sobre quien camina, y
 -- nadie es expulsado por un falso positivo. Las alas dan un salto libre por recarga, y el túnel
 -- y el aparecer cuentan como salida desde su destino (profile.anchor).
 local FLAT = Vector3.new(1, 0, 1)
@@ -64,7 +64,6 @@ local function canReach(profile, position: Vector3): boolean
 	end
 	return false
 end
-PlayerService.canReach = canReach
 
 local function assignAnthill(player: Player): Model?
 	local hills = Workspace:WaitForChild("Anthills"):GetChildren()
@@ -163,7 +162,8 @@ local function onCharacter(profile, character: Model)
 
 	humanoid.Died:Once(function()
 		task.wait(2)
-		if player.Parent and Profiles.get(player) then
+		-- Si algo ya lo recargó en estos 2 s (enjambrar, panel DEV), no se recarga otra vez
+		if player.Parent and Profiles.get(player) and player.Character == character then
 			player:LoadCharacter()
 		end
 	end)
@@ -307,9 +307,6 @@ local function onBite(player: Player, food: any)
 	end
 
 	local crit = rng:NextNumber() < stats.critChance
-	-- Mordisco dorado (galerías): la comida que arranca este mordisco vale mucho más
-	local golden = stats.goldChance > 0 and rng:NextNumber() < stats.goldChance
-	local worth = if golden then Config.MiniTune.GoldMult else 1
 	local damage = stats.biteDamage * (1 + profile.combo * Config.Combo.Step)
 	if crit then
 		damage *= stats.critMult
@@ -328,7 +325,7 @@ local function onBite(player: Player, food: any)
 		return
 	end
 	profile.carry += taken
-	profile.carryValue += taken * piece * worth
+	profile.carryValue += taken * piece
 	profile.carryColor = color
 	if goldFood then
 		profile.carryGold = true
@@ -338,9 +335,6 @@ local function onBite(player: Player, food: any)
 	if finished then
 		Profiles.awardTrophy(profile, def)
 		Events.fire("Finished", profile, def)
-	end
-	if golden then
-		Events.fire("Golden", profile)
 	end
 
 	-- Mordida en área: Config.Player.AreaShare del mordisco a las comidas de al lado (como mucho las
@@ -360,7 +354,7 @@ local function onBite(player: Player, food: any)
 			if i > 3 or profile.carry >= stats.capacity then
 				break
 			end
-			PlayerService.take(profile, item.food, math.ceil(damage * (stats.areaShare or 0.5) * (stats.neighborScale or 1)), worth)
+			PlayerService.take(profile, item.food, math.ceil(damage * (stats.areaShare or 0.5) * (stats.neighborScale or 1)))
 		end
 	end
 
@@ -370,7 +364,7 @@ local function onBite(player: Player, food: any)
 
 	Profiles.push(profile)
 	updateCarryVisual(profile)
-	fxRemote:FireClient(player, "Bite", position, taken, finished, crit, profile.combo, golden, goldFood)
+	fxRemote:FireClient(player, "Bite", position, taken, finished, crit, profile.combo, false, goldFood) -- false: hueco del antiguo mordisco dorado
 
 	-- Mordida en cadena (módulo Chain): después del efecto del mordisco, para que el rayo salga de ahí
 	if finished then

@@ -20,17 +20,29 @@ Las secciones de abajo describen el MVP original. Esto es lo que manda ahora; lo
 
 **Junto al montículo.** Con la mejora de huevos dorados, cada cierto tiempo aparece un huevo brillante en el suelo, al lado contrario del cartel: pisarlo da varios minutos de colonia de golpe. Con el jardín de hongos crecen tres hongos al otro costado; maduros brillan, y comerse uno da comida doble un rato. Solo la dueña puede cogerlos.
 
-**Enjambrar.** Ya no exige la tarta: se puede en cuanto la comida de la partida da una gota de jalea (hacia la zona 5 o 6). Comerse la tarta entera duplica la jalea de esa partida.
+**Enjambrar.** Ya no exige la tarta: se puede en cuanto la comida de la partida da una gota de jalea (hacia la zona 5 o 6). Comerse la tarta entera duplica la jalea de esa partida. Enjambrar en la capa 7 hace la segunda vuelta un ~43 % más rápida (antes, 86-99 %: casi no había segunda vuelta).
+
+**Árbol Real.** Ocho mejoras pagadas con jalea (`Config.Royal`). Sus efectos se suman por nivel (+12 % de comida, de mordida o de colonia, `Config.Rebirth`) y sus precios se multiplican (`cost * growth ^ nivel`), así la jalea de más rinde cada vez menos y el árbol no se llena en dos vueltas. El Néctar real (+2 % de comida por nivel) no tiene tope: siempre hay algo en qué gastar la jalea, también la comprada.
+
+**Tasa base de la colonia.** `data.baseRate` es lo que da la colonia sin frenesí, ratos x2, poción ni hongo, con los mismos topes. Con ella se calculan el progreso sin conexión, sacos, huevos, misiones, regalos y reglas: un potenciador activo ya no infla los premios. Olor a fiesta (la colonia al doble al entregar) salta como mucho cada 20 s; con viajes de 2-4 s era x2 siempre.
 
 **Puntuación.** La comida reunida en toda tu vida: en la lista de jugadores de Roblox y en un cartel del jardín con las diez mejores, con números abreviados (K, M, B, T, Qd, Qn…).
 
 **Arranque.** Las primeras comidas del jardín (miga, pipa, arándano) están hechas para leerse como comida a escala de hormiga, y la mitad de la comida del jardín sale cerca de los hormigueros y vuelve enseguida: los primeros viajes son cortos. La primera compra llega en segundos y la primera obrera hacia los dos minutos y medio.
 
-**Hormigueros de zona.** Cada zona del camino (2 a 14) tiene a su entrada, a la derecha, un hormiguero compartido (`Config.Depot`, módulo `Depots`). Quien tiene la zona abierta (o la llave maestra) entrega ahí como en casa, y sus obreras de esa zona viajan solo hasta él: se acabó volver al jardín en cada viaje. El Puesto avanzado se retiró del árbol; Túnel, Alas, Abeja, Obreras rápidas, Autopista y Feromona dulce se rediseñarán.
+**Hormigueros de zona.** Cada zona del camino (2 a 14) tiene a su entrada, a la derecha, un hormiguero compartido (`Config.Depot`, módulo `Depots`). Quien tiene la zona abierta (o la llave maestra) entrega ahí como en casa, y sus obreras de esa zona viajan solo hasta él: se acabó volver al jardín en cada viaje. La abeja y el tirachinas entregan en el hormiguero abierto más cercano (casa o zona). El Puesto avanzado se retiró del árbol; Túnel, Alas, Abeja, Obreras rápidas, Autopista y Feromona dulce se rediseñarán.
 
-**Ritmo.** Según `tools/sim.py` (perfil activo): capa 2 hacia el minuto 9, después unos 30 minutos por capa y unas 6 horas hasta la capa 13. Para mantenerlo con los hormigueros de zona se rebajó el valor de la comida desde la zona 3 (`FoodCurve.ZoneValues`) y lo que rinden Feromona dulce, Obreras rápidas y Autopista. Es una simulación, falta probarlo con jugadores.
+**Ritmo.** Según `tools/sim.py` (perfil activo): capa 2 hacia el minuto 9, después unos 22-33 minutos por capa y la capa 14 hacia las 5,5 horas. Para mantenerlo con los hormigueros de zona se rebajó el valor de la comida desde la zona 3 (`FoodCurve.ZoneValues`) y lo que rinden Feromona dulce, Obreras rápidas y Autopista. Es una simulación, falta probarlo con jugadores.
 
-**Tienda.** Pases permanentes (comida doble, mordida automática, colonia veloz, alas doradas, VIP, jalea doble, patas turbo, despensa sin fondo) y productos de un uso (poción x2, saco, carretilla, pala dorada, frenesí, huevo dorado, tarros de jalea).
+**Tienda.** Pases permanentes (comida doble, mordida automática, colonia veloz, alas doradas, VIP, jalea doble, patas turbo, despensa sin fondo) y productos de un uso (poción x2, saco, carretilla, pala dorada, frenesí, huevo dorado, tarros de jalea). Donde Roblox no deja vender azar (PolicyService), el próximo huevo de mascota se decide antes de pagar, se enseña y se guarda; el servidor solo cobra el que el cliente enseñaba.
+
+**Celular.** `Hud.compact()` (pantalla táctil y pequeña) cambia la distribución: menú en rejilla arriba a la izquierda, habilidades sobre el botón de saltar, botones de al menos 44 px y textos a escala de la pantalla.
+
+**Sonido y movimiento.** El botón del sonido abre un menú con Música, Efectos y Movimiento suave. Movimiento suave quita temblores, zoom y líneas que giran; arranca con la opción de movimiento reducido del sistema.
+
+**Medición e insignias.** `Analytics` solo escucha: embudo de primeros pasos, capas, enjambres, economía de jalea y comida, y compras con Robux como evento propio. Las insignias (`Config.Badges`: capa 2, capa 7, primer enjambre, la Tarta, capa 14) llevan `badgeId = 0` hasta crearlas en Roblox; con 0 no se entregan.
+
+**Retención.** El premio diario espera a que terminen los primeros pasos y deja un día de gracia por semana sin perder la racha. En Colonia hay un botón Invitar.
 
 ## Decisiones tomadas
 
@@ -146,7 +158,8 @@ Nodos con costo en Comida se reinician al Enjambrar. Hay un segundo árbol peque
 ## 9. Arquitectura técnica
 
 - **Servidor manda**: toda la economía se calcula en el servidor. El cliente solo pide acciones ("morder", "depositar", "comprar"). El servidor valida distancia, enfriamiento y saldo.
-- **Guardado**: ProfileStore, con bloqueo de sesión y guardado automático.
+- **Guardado**: DataStore con bloqueo de sesión propio (`src/server/Data.luau`, sin ProfileStore): cada guardado lleva el servidor dueño y la hora; otro servidor no carga hasta que se suelta o caduca (90 s). Guarda al salir, cada minuto y al cerrar.
+- **Revisión**: `selene src` en GitHub Actions en cada push y pull request (`.github/workflows/ci.yml`).
 - **Enjambre**: las obreras son un número en el servidor (producción por segundo hacia cada objetivo). El cliente dibuja un máximo de unas 300 hormigas, sin Humanoid, movidas en lote con `workspace:BulkMoveTo`. Si hay más, cada hormiga visible representa a varias.
 - **Comida**: el servidor guarda la vida. El cliente cambia el estado visual.
 - **Hormiga del jugador**: personaje propio (StarterCharacter) con 6 patas. En el MVP, animación de patas por código; luego animación hecha en Blender.
@@ -167,7 +180,7 @@ assets/      Modelos de Blender y texturas
 **Obligatorias**
 - Roblox Studio (gratis, con cuenta de Roblox)
 - Git
-- Rokit (gestor de herramientas) y con él Rojo, que sincroniza los archivos de código con Studio
+- Rokit (gestor de herramientas) y con él Rojo, que sincroniza los archivos de código con Studio, y selene, el linter
 - Plugin de Rojo dentro de Studio
 - Servidor MCP de Roblox Studio (viene integrado en Studio): deja que Claude vea y edite el lugar abierto
 
@@ -187,7 +200,7 @@ assets/      Modelos de Blender y texturas
 |---|---|---|
 | 0. Montaje | Instalar herramientas, proyecto Rojo, Claude conectado a Studio | Un script de prueba se sincroniza y corre |
 | 1. Bucle base | Hormiga, migas, morder, cargar, depositar, contador | Se puede farmear con cubos grises |
-| 2. Mejoras y guardado | Mejoras básicas, ProfileStore | El progreso sobrevive a salir y entrar |
+| 2. Mejoras y guardado | Mejoras básicas, DataStore con bloqueo de sesión | El progreso sobrevive a salir y entrar |
 | 3. Enjambre | Obreras, feromonas, render en lote | 300 hormigas en fila sin caídas de FPS |
 | 4. Árbol-hormiguero | UI en corte, 4 ramas, cámaras que se excavan | Todas las fases 0-5 son alcanzables |
 | 5. Rebirth | Tarta, Enjambrar, Árbol Real | Segunda partida más rápida que la primera |

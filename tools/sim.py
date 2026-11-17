@@ -98,16 +98,11 @@ if os.environ.get("VALUE_FIX"):
 BOSS_HP = 20                  # Config.FoodCurve.BossHp (la tarta)
 JEFA_HP = 4                   # Config.FoodLayout.JefaHp: la grande del banquete de cada zona
 RESPAWN = [2, 4, 7]  # Config.FoodLayout.Respawn: segundos hasta que vuelve cada comida de una zona
-# Config.FoodCurve.Extra: lo que pega de más a media capa quien va al día (mordida doble, racha,
-# galerías de mordida). Medido con este simulador (--calibrar) y redondeado. HardExtra: la comida dura
-# desde la zona HardFrom, donde ya se tiene Saliva ácida.
 # Config.FoodCurve.Press: lo que pega de más una pulsación al empezar cada capa (mordida doble, racha y
 # galerías de mordida) y HardPress: contra comida dura (Saliva ácida, Quebrantahuesos). Medidos con
 # python tools/sim.py --calibrar y redondeados.
 PRESS = [float(x) for x in os.environ.get("PRESS", "1,1.3,2.1,2.5,2.5,2.4,3.2,3.6,3.8,3.9,3.7,4,4.2,4.2").split(",")]
 HARD_PRESS = [float(x) for x in os.environ.get("HARD_PRESS", "1,1,1.4,1.5,1.5,1.8,1.8,2.8,3.5,4.5,5.1,5.1,7,5.6").split(",")]
-EXTRA = [1] * 14
-HARD_EXTRA = [1, 1.5, 1.5, 1.6, 1.3, 1.7, 1.7, 2.6, 2.8, 3.6, 4, 3.2, 4, 3.2]  # Config.FoodCurve.HardExtra
 
 
 def ref_damage(zone):

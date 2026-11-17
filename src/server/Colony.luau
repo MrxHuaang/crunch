@@ -16,9 +16,6 @@ local Profiles = require(script.Parent.Profiles)
 
 local Colony = {}
 
--- (profile, def, posición de la comida, distancia desde casa) -> distancia que pagan las obreras.
--- Lo pone el módulo Extras (puesto avanzado); sin él, la distancia es la de siempre.
-Colony.shortcut = nil :: ((any, any, Vector3, number) -> number)?
 -- Ganchos del módulo Garden: (profile, comida) -> si las obreras sin rastro pueden ir a esa comida
 -- del jardín; (profile, vida que querrían arrancar al jardín en este tick, dt) -> la que les toca.
 Colony.autoAllowed = nil :: ((any, Model) -> boolean)?
@@ -44,11 +41,7 @@ function Colony.reach(profile, def, foodPos: Vector3, hillPos: Vector3): number
 	if def.zone >= 2 then
 		return Depots.distance(def.zone, foodPos)
 	end
-	local reach = ((foodPos - hillPos) * Vector3.new(1, 0, 1)).Magnitude
-	if Colony.shortcut then
-		reach = Colony.shortcut(profile, def, foodPos, reach) -- puesto avanzado (Extras)
-	end
-	return reach
+	return ((foodPos - hillPos) * Vector3.new(1, 0, 1)).Magnitude
 end
 
 local function canEat(profile, def): boolean

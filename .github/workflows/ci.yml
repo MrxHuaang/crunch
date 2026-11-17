@@ -1,0 +1,14 @@
+# Revisa el codigo con selene en cada push y pull request.
+# Sin StyLua --check: el codigo no esta formateado y no se quiere reformatear.
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  selene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Instala Rokit y las versiones de rokit.toml (selene se baja solo el std de Roblox)
+      - uses: CompeyDev/setup-rokit@v0.2.1
+      - run: selene src

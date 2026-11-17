@@ -233,7 +233,6 @@ function Stats.derive(nodes, royal, depth: number?, minis: { [string]: boolean }
 		canBiteHard = lvl(nodes, "saw") > 0,
 		areaRadius = if area > 0 then 4 + 3 * area else 0,
 		areaShare = PLAYER.AreaShare,
-		goldChance = 0, -- el mordisco dorado sale de las reglas Pepita segura y Fiebre del oro (Perks.luau)
 		zoneMult = zoneMult, -- [zona] = multiplicador del valor de su comida
 
 		-- capacity cuenta también lo que lleva el escarabajo; ownCapacity es solo lo tuyo
@@ -307,7 +306,6 @@ function Stats.derive(nodes, royal, depth: number?, minis: { [string]: boolean }
 		chargeMult = ramp(lvl(nodes, "charged"), EXTRA.Charged.Mult, EXTRA.Charged.MultStep),
 		jawShare = jawShare,
 		bucheShare = ramp(lvl(nodes, "buche"), EXTRA.Buche.Share, EXTRA.Buche.Step),
-		hasOutpost = false, -- Puesto avanzado retirado hasta el rediseño de movilidad (hormigueros de zona)
 		giantInterval = ramp(lvl(nodes, "giantFood"), EXTRA.Giant.Interval, -EXTRA.Giant.Step),
 		giantMult = ramp(lvl(nodes, "giantFood"), EXTRA.Giant.Mult, EXTRA.Giant.MultStep),
 		rainCooldown = ramp(lvl(nodes, "rain"), EXTRA.Rain.Cooldown, -EXTRA.Rain.Step),

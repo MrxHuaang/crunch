@@ -966,12 +966,11 @@ function Tunnel.start(remotes: Folder)
 			return
 		end
 		local key = input.KeyCode
-		if key == Enum.KeyCode.Escape or key == Enum.KeyCode.ButtonB then
+		-- La B del teclado no cierra si se está escribiendo en un cuadro de texto (processed)
+		if key == Enum.KeyCode.Escape or key == Enum.KeyCode.ButtonB or (key == Enum.KeyCode.B and not processed) then
 			Tunnel.close()
 		elseif processed then
 			return
-		elseif key == Enum.KeyCode.B then
-			Tunnel.close()
 		elseif key == Enum.KeyCode.Up or key == Enum.KeyCode.Left or key == Enum.KeyCode.DPadUp or key == Enum.KeyCode.DPadLeft then
 			moveFocus(-1)
 		elseif key == Enum.KeyCode.Down or key == Enum.KeyCode.Right or key == Enum.KeyCode.DPadDown or key == Enum.KeyCode.DPadRight then

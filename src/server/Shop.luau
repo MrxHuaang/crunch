@@ -14,6 +14,19 @@ local Shop = {}
 
 local fxRemote: RemoteEvent
 
+-- Como mucho 8 peticiones por segundo entre Buy, Wear y Rebirth (cubo de fichas, como Orders).
+-- Vive en el perfil (no se guarda) para no tener que limpiarlo al salir.
+local function allow(profile): boolean
+	local clock = os.clock()
+	profile.shopTokens = math.min(8, (profile.shopTokens or 8) + (clock - (profile.shopTokenAt or clock)) * 8)
+	profile.shopTokenAt = clock
+	if profile.shopTokens < 1 then
+		return false
+	end
+	profile.shopTokens -= 1
+	return true
+end
+
 local function buyNode(profile, id: string): boolean
 	local def = Config.NodeById[id]
 	if not def or def.unit then
@@ -117,7 +130,7 @@ end
 
 local function onBuy(player: Player, kind: any, id: any, amount: any)
 	local profile = Profiles.get(player)
-	if not profile or type(kind) ~= "string" then
+	if not profile or type(kind) ~= "string" or not allow(profile) then
 		return
 	end
 
@@ -170,14 +183,16 @@ end
 -- Vestidor: la primera vez se compra con comida; luego ponérselo es gratis.
 local function onWear(player: Player, kind: any, id: any)
 	local profile = Profiles.get(player)
-	if not profile or type(id) ~= "string" then
+	if not profile or type(id) ~= "string" or not allow(profile) then
 		return
 	end
 	local def = if kind == "skin" then Config.SkinById[id] elseif kind == "hat" then Config.HatById[id] elseif kind == "trail" then Trails.byId[id] elseif kind == "outfit" then Outfits.byId[id] else nil
-	if not def then
+	-- kind es skin, hat, trail u outfit: el mismo nombre que su campo en data.
+	-- Si ya lo llevas no se hace nada (refresh rehace el modelo de la hormiga).
+	local data = profile.data
+	if not def or data[kind] == id then
 		return
 	end
-	local data = profile.data
 	if def.pass then
 		if not profile.passes[def.pass] then
 			return
@@ -189,15 +204,7 @@ local function onWear(player: Player, kind: any, id: any)
 		data.food -= def.cost
 		data.owned[id] = true
 	end
-	if kind == "skin" then
-		data.skin = id
-	elseif kind == "hat" then
-		data.hat = id
-	elseif kind == "outfit" then
-		data.outfit = id
-	else
-		data.trail = id
-	end
+	data[kind] = id
 	Profiles.refresh(profile)
 	fxRemote:FireClient(player, "Worn", kind, id)
 end
@@ -214,7 +221,7 @@ end
 
 local function onRebirth(player: Player)
 	local profile = Profiles.get(player)
-	if not profile then
+	if not profile or not allow(profile) then
 		return
 	end
 	local gain = Shop.jellyNow(profile)

@@ -1973,9 +1973,7 @@ function Social.start(remotes: Folder)
 		end
 		if input.KeyCode == GIFT_KEY and giftTarget then
 			remote:FireServer("Gift", giftTarget)
-		elseif input.KeyCode == Enum.KeyCode.N then
-			Social.toggle()
-		elseif input.KeyCode == Enum.KeyCode.Escape and panel.open then
+		elseif input.KeyCode == Enum.KeyCode.N or (input.KeyCode == Enum.KeyCode.Escape and panel.open) then
 			Social.toggle()
 		end
 	end)

@@ -1,23 +1,20 @@
 -- Mejoras que cambian cómo juegas (no son porcentajes):
 --   mordisco cargado (quieta junto a la comida, el siguiente mordisco arranca un pedazo enorme),
 --   doble mandíbula (cada mordisco muerde también la comida de al lado), buche (te guardas parte de
---   cada entrega para el siguiente viaje), puesto avanzado (un hormiguero pequeño a la entrada de tu
---   zona más honda), comida gigante (una comida de tu zona crece) y lluvia propia (habilidad activa).
+--   cada entrega para el siguiente viaje), comida gigante (una comida de tu zona crece) y lluvia
+--   propia (habilidad activa).
 --   La senda de feromonas es solo del cliente (dibujo y velocidad, como correr): ver src/client/Extras.luau.
 -- Aquí se decide todo; los clientes dibujan lo que se les cuenta por el remoto "Extras".
 --
--- Remoto "Extras" (servidor -> todos): "Charged", "Jaw", "Outpost", "OutpostUp", "Giant",
+-- Remoto "Extras" (servidor -> todos): "Charged", "Jaw", "Giant",
 -- "RainCrumb", "RainTaken", "RainGone". (Servidor -> dueña): "Buche". (Cliente -> servidor): "Rain".
--- Atributos: jugadora "RainReadyAt"; hormiguero "OutpostPos" (Vector3) y "OutpostZ" (z de la entrada
--- de la zona del puesto: la comida más allá va al puesto); comida "Giant" (UserId de quien la hizo crecer).
--- El puesto es un modelo "Outpost" dentro del hormiguero de su dueña (comparte su contorno de tinta).
+-- Atributos: jugadora "RainReadyAt"; comida "Giant" (UserId de quien la hizo crecer).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
-local Colony = require(script.Parent.Colony)
 local Depots = require(script.Parent.Depots)
 local Events = require(script.Parent.Events)
 local FoodService = require(script.Parent.FoodService)
@@ -101,7 +98,6 @@ local function stateOf(profile)
 			lastBite = -math.huge,
 			jawFxAt = 0,
 			buche = nil,
-			outpost = nil,
 			giant = nil :: Model?,
 			giantBorn = 0,
 			giantAt = 0,
@@ -120,148 +116,8 @@ local function current(profile, runId: number): boolean
 end
 
 ---------------------------------------------------------------------------------------------------
--- Puesto avanzado
-
-local OUTPOST_DIRT = { Color3.fromRGB(170, 112, 66), Color3.fromRGB(196, 136, 84), Color3.fromRGB(214, 156, 100) }
-
-local function blob(parent: Instance, size: Vector3, color: Color3, cframe: CFrame): Part
-	local p = Instance.new("Part")
-	p.Anchored = true
-	p.CanCollide = false
-	p.CanQuery = false
-	p.CanTouch = false
-	p.CastShadow = false
-	p.Material = Enum.Material.SmoothPlastic
-	p.TopSurface = Enum.SurfaceType.Smooth
-	p.BottomSurface = Enum.SurfaceType.Smooth
-	p.Size = size
-	p.Color = color
-	p.CFrame = cframe
-	local mesh = Instance.new("SpecialMesh")
-	mesh.MeshType = Enum.MeshType.Sphere
-	mesh.Parent = p
-	p.Parent = parent
-	return p
-end
-
--- Sitio del puesto: los seis hormigueros reparten sus puestos a los dos lados del túnel
-local function outpostSpot(hill: Model, zone): Vector3
-	local index = tonumber(string.match(hill.Name, "%d+")) or 1
-	local side = if index % 2 == 1 then -1 else 1
-	local row = (index - 1) // 2
-	return Vector3.new(side * (Config.Map.Half - 10), Config.GroundY, zone.z0 - 16 - row * 24)
-end
-
-local function buildOutpost(profile, position: Vector3, zoneId: number): Model
-	local model = Instance.new("Model")
-	model.Name = "Outpost"
-	model:SetAttribute("Zone", zoneId)
-	local at = CFrame.new(position)
-	blob(model, Vector3.new(9, 4.2, 9), OUTPOST_DIRT[1], at * CFrame.new(0, 1, 0))
-	blob(model, Vector3.new(6, 4, 6), OUTPOST_DIRT[2], at * CFrame.new(0.3, 2.6, -0.2))
-	blob(model, Vector3.new(3.2, 2.6, 3.2), OUTPOST_DIRT[3], at * CFrame.new(-0.1, 4.2, 0.1))
-	blob(model, Vector3.new(1.8, 0.6, 1.8), Color3.fromRGB(40, 26, 22), at * CFrame.new(-0.1, 5.4, 0.1))
-	-- Terrones alrededor y un banderín con el color de su dueña
-	for i = 0, 4 do
-		local a = i / 5 * math.pi * 2 + 0.4
-		local size = 1 + (i % 3) * 0.35
-		blob(model, Vector3.new(size, size * 0.7, size), OUTPOST_DIRT[i % 3 + 1], at * CFrame.new(math.cos(a) * 5.4, 0.25, math.sin(a) * 5.4))
-	end
-	local pole = Instance.new("Part")
-	pole.Name = "Pole"
-	pole.Anchored = true
-	pole.CanCollide = false
-	pole.CanQuery = false
-	pole.CanTouch = false
-	pole.Shape = Enum.PartType.Cylinder
-	pole.Material = Enum.Material.SmoothPlastic
-	pole.Color = Color3.fromRGB(132, 86, 52)
-	pole.Size = Vector3.new(7, 0.35, 0.35)
-	pole.CFrame = at * CFrame.new(2.2, 6, 0) * CFrame.Angles(0, 0, math.pi / 2)
-	pole.Parent = model
-	local flag = Instance.new("WedgePart")
-	flag.Name = "Flag"
-	flag.Anchored = true
-	flag.CanCollide = false
-	flag.CanQuery = false
-	flag.CanTouch = false
-	flag.Material = Enum.Material.SmoothPlastic
-	flag.Color = Color3.fromRGB(230, 57, 70)
-	flag.Size = Vector3.new(0.2, 1.6, 2.4)
-	flag.CFrame = at * CFrame.new(2.2, 8.5, -1.2) * CFrame.Angles(math.rad(90), 0, 0)
-	flag.Parent = model
-
-	-- El nombre de su dueña, encima, para todo el mundo
-	local sign = Instance.new("BillboardGui")
-	sign.Name = "Sign"
-	sign.Adornee = pole
-	sign.Size = UDim2.fromOffset(220, 34)
-	sign.StudsOffsetWorldSpace = Vector3.new(0, 7, 0)
-	sign.MaxDistance = 140
-	sign.LightInfluence = 0
-	local label = Instance.new("TextLabel")
-	label.BackgroundTransparency = 1
-	label.Size = UDim2.fromScale(1, 1)
-	label.Font = Enum.Font.FredokaOne
-	label.TextScaled = true
-	label.TextColor3 = Color3.fromRGB(255, 244, 222)
-	label.TextStrokeColor3 = Color3.fromRGB(20, 16, 16)
-	label.TextStrokeTransparency = 0
-	label.Text = "Puesto de " .. profile.player.DisplayName
-	label.Parent = sign
-	sign.Parent = model
-
-	model.WorldPivot = at
-	model.Parent = profile.hill
-	return model
-end
-
-local function dropOutpost(s)
-	local o = s.outpost
-	if not o then
-		return
-	end
-	s.outpost = nil
-	if o.model then
-		o.model:Destroy()
-	end
-	if o.hill and o.hill.Parent then
-		o.hill:SetAttribute("OutpostPos", nil)
-		o.hill:SetAttribute("OutpostZ", nil)
-	end
-end
-
--- Pone, mueve o quita el puesto según la mejora y la capa más honda
-local function syncOutpost(profile, s)
-	local stats = profile.stats
-	local hill = profile.hill
-	local wanted = if stats.hasOutpost and hill and stats.depth >= 2 then math.min(stats.depth, #Config.Zones) else nil
-	local o = s.outpost
-	if o and (o.zone ~= wanted or o.hill ~= hill or not o.model.Parent) then
-		dropOutpost(s)
-		o = nil
-	end
-	if wanted and not o then
-		local zone = Config.Zones[wanted]
-		local position = outpostSpot(hill, zone)
-		local model = buildOutpost(profile, position, wanted)
-		local home = hill:GetPivot().Position
-		s.outpost = {
-			model = model,
-			hill = hill,
-			zone = wanted,
-			pos = position,
-			edge = zone.z0, -- comida con z por debajo de esto: va al puesto
-			homeDistance = ((position - home) * FLAT).Magnitude,
-		}
-		hill:SetAttribute("OutpostPos", position)
-		hill:SetAttribute("OutpostZ", zone.z0)
-		remote:FireAllClients("OutpostUp", profile.player, position)
-	end
-end
-
--- Cerca del hormiguero o del puesto (donde se entrega)
-local function atDepot(profile, s, position: Vector3, margin: number): boolean
+-- Dónde se entrega a pie: el hormiguero de casa o el de zona (Depots)
+local function atDepot(profile, position: Vector3, margin: number): boolean
 	local hill = profile.hill
 	if hill then
 		local flat = ((hill:GetPivot().Position - position) * FLAT).Magnitude
@@ -269,46 +125,7 @@ local function atDepot(profile, s, position: Vector3, margin: number): boolean
 			return true
 		end
 	end
-	if Depots.near(profile, position, margin) then
-		return true -- hormiguero de zona
-	end
-	local o = s.outpost
-	return o ~= nil and ((o.pos - position) * FLAT).Magnitude <= X.Outpost.Radius + margin
-end
-
-local function updateOutpost(profile, s, root: BasePart)
-	syncOutpost(profile, s)
-	local o = s.outpost
-	if not o or profile.carry <= 0 then
-		return
-	end
-	if ((o.pos - root.Position) * FLAT).Magnitude > X.Outpost.Radius then
-		return
-	end
-	-- Mismo antitrampas que la entrega en casa: si llegó demasiado rápido, la entrega espera
-	if not PlayerService.canReach(profile, root.Position) then
-		return
-	end
-	PlayerService.moved(profile, root.Position)
-	-- Entregar aquí es como entregar en casa (credit avisa del suceso "Deposit": el buche lo oye)
-	local credited, _, doubled = PlayerService.credit(profile, profile.carry, profile.carryValue)
-	profile.carry = 0
-	profile.carryValue = 0
-	PlayerService.refreshCarry(profile)
-	local home = if profile.hill then profile.hill:GetPivot().Position else o.pos
-	remote:FireAllClients("Outpost", profile.player, o.pos + Vector3.new(0, 6, 0), credited, doubled, home)
-end
-
--- Obreras (Colony): a la comida de la zona del puesto o más allá van desde el puesto. El tramo del
--- puesto a casa lo pasan en cadena; solo pagan Relay de ese camino.
-local function shortcut(profile, def, foodPos: Vector3, distance: number): number
-	local s = states[profile.player]
-	local o = s and s.profile == profile and s.outpost
-	if not o or def.zone < o.zone then
-		return distance
-	end
-	local hop = ((foodPos - o.pos) * FLAT).Magnitude
-	return math.min(distance, hop + X.Outpost.Relay * o.homeDistance)
+	return Depots.near(profile, position, margin) ~= nil
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -321,8 +138,8 @@ local function onDeposit(profile)
 	end
 	local root = getRoot(profile.player)
 	local s = stateOf(profile)
-	-- Solo en las entregas a pie (en casa o en el puesto): la abeja y el tirachinas no cuentan
-	if not root or not atDepot(profile, s, root.Position, 2) then
+	-- Solo en las entregas a pie: la abeja y el tirachinas no cuentan
+	if not root or not atDepot(profile, root.Position, 2) then
 		return
 	end
 	local n = math.floor(profile.carry * stats.bucheShare)
@@ -347,7 +164,7 @@ local function updateBuche(profile, s, root: BasePart)
 		return
 	end
 	local stats = profile.stats
-	if profile.carry >= stats.capacity or atDepot(profile, s, root.Position, 4) then
+	if profile.carry >= stats.capacity or atDepot(profile, root.Position, 4) then
 		return
 	end
 	s.buche = nil
@@ -653,7 +470,6 @@ local function forget(player: Player)
 	if not s then
 		return
 	end
-	dropOutpost(s)
 	clearCrumbs(s.profile, s)
 	states[player] = nil
 end
@@ -683,10 +499,8 @@ local function tick()
 		updateCrumbs(profile, s, now, root)
 		if not root then
 			s.chargeFrom = nil
-			syncOutpost(profile, s)
 			continue
 		end
-		updateOutpost(profile, s, root)
 		updateBuche(profile, s, root)
 		updateCharge(profile, s, now, root)
 		updateGiant(profile, s, now, root)
@@ -699,7 +513,6 @@ function Extras.start(remotes: Folder)
 	remote.Parent = remotes
 	remote.OnServerEvent:Connect(onRequest)
 
-	Colony.shortcut = shortcut
 	Events.on("Bite", onBite)
 	Events.on("Deposit", onDeposit)
 	-- Partida nueva sin enjambrar (panel DEV): data.rebirths no cambia, así que se fuerza la limpieza

@@ -229,6 +229,20 @@ local function setWheel(player: Player, list: any)
 end
 
 local function onRequest(player: Player, action: any, a: any)
+	-- Como mucho 8 peticiones por segundo (cubo de fichas, como Orders): "Wheel" clona y sincroniza
+	-- la rueda entera en cada llamada. Vive en el perfil (no se guarda) para no limpiarlo al salir.
+	local profile = Profiles.get(player)
+	if not profile then
+		return
+	end
+	local clock = os.clock()
+	profile.emoteTokens = math.min(8, (profile.emoteTokens or 8) + (clock - (profile.emoteTokenAt or clock)) * 8)
+	profile.emoteTokenAt = clock
+	if profile.emoteTokens < 1 then
+		return
+	end
+	profile.emoteTokens -= 1
+
 	if action == "Play" then
 		play(player, a)
 	elseif action == "Stop" then
