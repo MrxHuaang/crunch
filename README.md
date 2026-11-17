@@ -80,7 +80,7 @@ Para añadir una zona: su entrada en `Config.Zones` y `Config.Layers`, tres comi
 | Enjambre | `workspace:BulkMoveTo` | Las obreras son números en el servidor; cada cliente dibuja hasta unas 300, sin Humanoid |
 | Monetización | MarketplaceService, PolicyService | Pases permanentes y productos de un uso (`Config.Passes`, `Config.Products`). Donde Roblox no deja vender azar, el próximo huevo de mascota se decide y se enseña antes de pagar |
 | Medición | AnalyticsService, BadgeService | `Analytics`: embudo de primeros pasos, capas, enjambres, economía y compras con Robux; insignias de `Config.Badges` |
-| Calidad | selene, GitHub Actions | `selene src` en cada push y pull request (`.github/workflows/ci.yml`) |
+| Calidad | selene, GitHub Actions | `selene --allow-warnings src` en cada push y pull request (`.github/workflows/ci.yml`) |
 | Balance | Python (`tools/sim.py`) | Simula el bucle real, viaje a viaje, para tres perfiles de jugadora |
 | Arte | Python (`art/gen_art.py`), HTML (`art/promo`) | Trama, cielo, viñeta, iconos del árbol, icono y miniatura del juego |
 
@@ -129,7 +129,7 @@ flowchart LR
 ### Revisar el código
 
 ```bash
-selene src
+selene --allow-warnings src
 ```
 
 Debe dar 0 errores (los avisos no frenan). Lo mismo corre GitHub Actions en cada push y pull request. `selene.toml` usa `crunch+roblox`: `crunch.yml` corrige el std de Roblox que genera selene (marcaba `Vector3.yAxis:Cross` como error). No hay `stylua --check`: el código no está formateado y no se va a reformatear.

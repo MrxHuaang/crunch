@@ -11,4 +11,5 @@ jobs:
       - uses: actions/checkout@v4
       # Instala Rokit y las versiones de rokit.toml (selene se baja solo el std de Roblox)
       - uses: CompeyDev/setup-rokit@v0.2.1
-      - run: selene src
+      # Solo fallan los errores: los avisos (variables sin usar, etc.) se ven en el log
+      - run: selene --allow-warnings src
