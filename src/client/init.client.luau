@@ -90,18 +90,6 @@ Wardrobe.start(remotes)
 Tunnel.start(remotes)
 Abilities.start(hud, remotes)
 
--- Vecinas (opcional): morder también asalta despensas, que no son comida de Targeting
-local function socialTarget(): boolean
-	local module = script:FindFirstChild("Social")
-	if not module then
-		return false
-	end
-	local ok, has = pcall(function()
-		return (require(module) :: any).hasBiteTarget()
-	end)
-	return ok and has == true
-end
-
 -- Módulos opcionales: cada uno trae su propia interfaz y se arranca solo si existe.
 -- Un fallo en uno no debe tumbar el resto del juego.
 for _, name in { "Life", "Ambience", "Quests", "WorldEvents", "Pets", "Hazards", "Allies", "Extras", "Perks", "Garden", "Opening", "Juice", "CasteClient", "Social", "Emotes", "Orders", "Stalls" } do
@@ -480,8 +468,6 @@ end)
 -- muerde sola en cuanto hay comida a tiro.
 local holding = false
 local lastBite = 0
-local holdingSince = 0 -- para no avisar "nada a tiro" por un toque suelto
-local lastMiss = 0 -- el aviso sale como mucho una vez por segundo
 
 local function isBiteInput(input: InputObject): boolean
 	return input.UserInputType == Enum.UserInputType.MouseButton1
@@ -498,9 +484,6 @@ local DRAG_PX = 12
 
 UserInputService.InputBegan:Connect(function(input, processed)
 	if not processed and isBiteInput(input) then
-		if not holding then
-			holdingSince = os.clock()
-		end
 		holding = true
 		if input.UserInputType == Enum.UserInputType.Touch then
 			biteTouch, biteTouchFrom = input, input.Position
@@ -550,9 +533,5 @@ RunService.Heartbeat:Connect(function()
 		remotes.Bite:FireServer(target)
 		AntAnim.bite()
 		Fx.squash(target)
-	elseif holding and now - holdingSince > 0.35 and now - lastMiss >= 1 and not socialTarget() then
-		-- Mantienes morder y no hay nada a tiro: aviso pequeño (repetido solo alarga el bocadillo)
-		lastMiss = now
-		Bubble.flash("Nada a tiro: acércate a la comida", 1.2)
 	end
 end)

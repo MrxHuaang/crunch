@@ -1459,13 +1459,6 @@ local function thiefNearMe(root: BasePart): Player?
 	return nil
 end
 
--- ¿Morder ahora asalta una despensa o atrapa a una ladrona? (lo pregunta init.client para no decir
--- "Nada a tiro" mientras asaltas)
-function Social.hasBiteTarget(): boolean
-	local root = rootOf(player)
-	return root ~= nil and (thiefNearMe(root) ~= nil or nearestPantry(root) ~= nil)
-end
-
 local function tryBite()
 	local root = rootOf(player)
 	if not root then
