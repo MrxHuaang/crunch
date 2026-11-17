@@ -16,6 +16,8 @@
 --                                                position: centro de la comida + 1; damage: daño del
 --                                                mordisco; finished: lo terminó, y food ya no existe)
 --   "FinalBite" (profile, food, position, damage) tu mordisco terminó esa comida (food ya no existe)
+--   "Opening"  (profile, step)                    primeros pasos: 0 = empieza la cadena; 1..6 = paso
+--                                                hecho (también los que se saltan por estar ya hechos)
 
 local Events = {}
 

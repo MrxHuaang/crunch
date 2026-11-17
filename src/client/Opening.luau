@@ -65,12 +65,14 @@ function Opening.hint(): (string?, boolean?)
 	elseif current == 5 then
 		return if keyboard then "Pulsa Q y cría tu primera obrera" else "Toca Hormiguero y cría una obrera", true
 	end
-	-- Paso 6: solo habla cuando ya alcanza; mientras, siguen las pistas de siempre
-	local cost = Stats.digCost(1)
-	if State.num("Food") >= cost then
-		return if keyboard then "¡Ya puedo excavar la capa 2! Pulsa Q" else "¡Ya puedo excavar la capa 2! Toca Hormiguero", false
+	-- Paso 6: siempre a la vista la meta de la capa 2. Mismo coste que Tree.luau (con la Pala dorada,
+	-- atributo HalfDig, a mitad); refreshHint lo vuelve a pedir cada vez que cambia Food.
+	local cost = Stats.digCost(1) * (if State.num("HalfDig") > 0 then 0.5 else 1)
+	local food = State.num("Food")
+	if food >= cost then
+		return if keyboard then "¡Ya puedo excavar la capa 2! Pulsa Q" else "¡Ya puedo excavar la capa 2! Toca Hormiguero", true
 	end
-	return nil, nil
+	return "Capa 2: te faltan " .. Format.short(cost - food) .. " de comida", true
 end
 
 local function celebrate(done: number, prize: number)

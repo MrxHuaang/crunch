@@ -68,6 +68,7 @@ local function ensure(profile): boolean
 		data.opening = if fresh then 1 else DONE
 		if fresh then
 			data.openingBites = 0
+			Events.fire("Opening", profile, 0) -- primer escalón del embudo: quien empieza la cadena
 		end
 	end
 	return type(data.opening) == "number" and data.opening < DONE
@@ -79,7 +80,9 @@ local function complete(profile, step: number)
 		return
 	end
 	data.opening = step + 1
+	Events.fire("Opening", profile, step)
 	while data.opening <= STEPS and satisfied(profile, data.opening) do
+		Events.fire("Opening", profile, data.opening) -- cuenta para el embudo aunque no tenga fiesta
 		data.opening += 1 -- ya hecho por su cuenta: sin premio ni fiesta
 	end
 	counts[profile] = 0

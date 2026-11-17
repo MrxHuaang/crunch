@@ -415,6 +415,17 @@ local function buildCard(parent: Instance, y: number)
 		end)
 		holes[day] = { hole = hole, stroke = stroke, number = number, prize = prize, scale = scale }
 	end
+
+	-- Letra pequeña bajo las casillas: el día de gracia (lo decide el servidor, Quests.dailyState)
+	local note = Comic.label(face, "Si fallas un día, la racha aguanta (1 vez por semana)", Comic.Body, 14, Comic.Ink)
+	at(note, 14, 146, 352, 16)
+	note.TextScaled = true
+	note.TextTransparency = 0.25
+	note.ZIndex = 5
+	local noteLimit = Instance.new("UITextSizeConstraint")
+	noteLimit.MaxTextSize = 14
+	noteLimit.MinTextSize = 10
+	noteLimit.Parent = note
 end
 
 local function paintDaily(daily)
@@ -440,8 +451,11 @@ local function paintDaily(daily)
 		view.prize.TextTransparency = if punched then 0.5 else 0
 	end
 	if daily.ready then
-		dailyStatus.Text = "¡Pica la casilla " .. daily.step .. "!"
+		dailyStatus.Text = (if daily.saved then "¡Racha salvada! " else "") .. "¡Pica la casilla " .. daily.step .. "!"
 		dailyStatus.TextColor3 = Comic.Red
+	elseif daily.locked then
+		dailyStatus.Text = "Tras tus primeros pasos"
+		dailyStatus.TextColor3 = Comic.Ink
 	else
 		dailyStatus.Text = "Vuelve en " .. clock(dailyAt - os.clock())
 		dailyStatus.TextColor3 = Comic.Ink
@@ -493,14 +507,13 @@ local function applyState(data)
 	paintRerolls()
 	refreshBadge()
 
-	-- Al entrar: si el premio diario espera, un aviso corto (sin bloquear nada)
-	if not nudged then
+	-- La primera vez en la sesión que el premio diario espera (al entrar o al acabar los primeros
+	-- pasos), un aviso corto sin bloquear nada
+	if not nudged and data.daily.ready then
 		nudged = true
-		if data.daily.ready then
-			task.delay(4, function()
-				Bubble.flash("¡Premio diario listo! " .. (if keyboard then "Pulsa T" else "Toca Misiones"), 6)
-			end)
-		end
+		task.delay(4, function()
+			Bubble.flash("¡Premio diario listo! " .. (if keyboard then "Pulsa T" else "Toca Misiones"), 6)
+		end)
 	end
 end
 

@@ -820,6 +820,26 @@ local function tickTimers()
 	end
 end
 
+-- Invitar amigas: la ventana es la de Roblox. Va en "Colonia ›" (no gasta un hueco más en el
+-- celular) y solo si esta cuenta puede invitar (cuentas restringidas o consolas a veces no).
+local function buildInvite()
+	local SocialService = game:GetService("SocialService")
+	local player = Players.LocalPlayer
+	task.spawn(function()
+		local ok, can = pcall(function()
+			return SocialService:CanSendGameInviteAsync(player)
+		end)
+		if not ok or not can then
+			return
+		end
+		groupedButton("Colonia", "Invitar", nil, Comic.Cyan, function()
+			pcall(function()
+				SocialService:PromptGameInvite(player)
+			end)
+		end)
+	end)
+end
+
 function Hud.start(): ScreenGui
 	gui = Instance.new("ScreenGui")
 	gui.Name = "Hud"
@@ -831,6 +851,7 @@ function Hud.start(): ScreenGui
 	buildSide()
 	watchGroups()
 	buildMute()
+	buildInvite()
 	showHint(false)
 	task.spawn(tickTimers)
 	return gui

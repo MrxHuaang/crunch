@@ -38,7 +38,7 @@ DevTools.start(remotes) -- panel DEV y CrunchDebug: solo en Studio, fuera de Stu
 
 -- Módulos opcionales (misiones, eventos, mascotas, peligros, aliadas, comida dorada, mordida en
 -- cadena, túnel): se arrancan si existen.
-for _, name in { "Quests", "WorldEvents", "PetService", "Hazards", "Allies", "GoldFood", "Chain", "Tunnel", "Extras", "Perks", "Garden", "Opening", "CasteService", "Social", "Orders", "Emotes", "Stalls" } do
+for _, name in { "Quests", "WorldEvents", "PetService", "Hazards", "Allies", "GoldFood", "Chain", "Tunnel", "Extras", "Perks", "Garden", "Opening", "CasteService", "Social", "Orders", "Emotes", "Stalls", "Analytics" } do
 	local module = script:FindFirstChild(name)
 	if module then
 		local ok, lib = pcall(require, module)

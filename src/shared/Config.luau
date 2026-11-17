@@ -1000,6 +1000,17 @@ Config.Garden = {
 -- del jardín que muerde quien empieza valen JuicyMult veces.
 Config.Opening = { Bites = 3, Prizes = { 15, 50, 20, 50, 125, 7500 }, Juicy = 30, JuicyMult = 2 }
 
+-- Insignias (src/server/Analytics.luau). Créalas en el panel de creador de Roblox (Insignias) y pega
+-- aquí su id; con badgeId = 0 está apagada. Se gana al llegar a la capa depth, al enjambrar rebirths
+-- veces o al comerse la tarta entera (tarta).
+Config.Badges = {
+	{ id = "layer2", badgeId = 0, depth = 2, name = "¡A cavar!", desc = "Excava la capa 2 y llega al Picnic." },
+	{ id = "layer7", badgeId = 0, depth = 7, name = "Hormiga de cocina", desc = "Excava hasta la capa 7, la Cocina." },
+	{ id = "swarm", badgeId = 0, rebirths = 1, name = "Primer enjambre", desc = "Enjambra por primera vez y gana jalea real." },
+	{ id = "tarta", badgeId = 0, tarta = true, name = "La Tarta", desc = "Cómete la Tarta entera." },
+	{ id = "layer14", badgeId = 0, depth = 14, name = "Al espacio", desc = "Excava hasta la capa 14, el Espacio." },
+}
+
 -- Vecinas (src/server/Social.luau y src/client/Social.luau): despensa y asalto, regalos, amistad,
 -- morder en dúo y saludo de antenas. Nadie pierde progreso: lo que se roba sale de un extra creado.
 -- "Ingreso" de una jugadora = lo mayor entre data.rate (colonia) y lo que entregó en los últimos

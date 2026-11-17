@@ -11,7 +11,8 @@
 --   slots   = { misión, misión, misión }   misión = { id, kind, tier, goal, have, reward, food?, zone?, seen? }
 --   rerolls = { t1, t2, t3 }                os.time() desde el que cada hueco puede cambiar gratis
 --   golden  = { t, ... }                    os.time() de los últimos bocados dorados (máx. 6)
---   daily   = { day, streak }               día UTC del último premio diario y su casilla (1..7)
+--   daily   = { day, streak, grace? }       día UTC del último premio diario, su casilla (1..7) y
+--                                           (perezoso) día UTC en que se usó el día de gracia
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -439,16 +440,32 @@ local function giveBuff(profile, seconds: number)
 	profile.buffUntil = math.max(profile.buffUntil, now) + seconds
 end
 
--- Premio diario: casilla que toca, cuántas hay picadas y si se puede cobrar
-local function dailyState(q)
-	local d = q.daily
+-- El premio diario espera a que acaben los primeros pasos (Opening: data.opening 1..6; 7 = hechos),
+-- salvo que ya excavaras la capa 2 o enjambraras: así no se mezcla con lo primero que aprendes.
+local function dailyLocked(data): boolean
+	return type(data.opening) == "number" and data.opening < 7 and data.depth < 2 and data.rebirths == 0
+end
+
+-- Día de gracia: perder UN día no rompe la racha, como mucho una vez cada 7 días
+local GRACE_EVERY = 7
+
+-- Premio diario: casilla que toca, cuántas hay picadas, si se puede cobrar y si cobrar gasta la gracia
+local function dailyState(profile)
+	local d = profile.data.quests.daily
 	local day = today()
+	local step, punched, ready, grace = 1, 0, true, false
 	if d.day == day then
-		return d.streak % 7 + 1, d.streak, false
+		step, punched, ready = d.streak % 7 + 1, d.streak, false
 	elseif d.day == day - 1 then
-		return d.streak % 7 + 1, d.streak % 7, true
+		step, punched = d.streak % 7 + 1, d.streak % 7
+	-- Con la semana completa (streak % 7 == 0) la racha empieza de cero igual: no se gasta la gracia
+	elseif d.day == day - 2 and d.streak % 7 > 0 and (type(d.grace) ~= "number" or day - d.grace >= GRACE_EVERY) then
+		step, punched, grace = d.streak % 7 + 1, d.streak % 7, true
 	end
-	return 1, 0, true
+	if dailyLocked(profile.data) then
+		ready = false
+	end
+	return step, punched, ready, grace
 end
 
 -- Envío al cliente ----------------------------------------------------------------------
@@ -496,7 +513,7 @@ local function snapshot(profile)
 			reroll = math.max(0, q.rerolls[i] - now),
 		}
 	end
-	local step, punched, ready = dailyState(q)
+	local step, punched, ready, grace = dailyState(profile)
 	local prizes = {}
 	for i, prize in DAILY do
 		prizes[i] = {
@@ -511,6 +528,8 @@ local function snapshot(profile)
 			step = step,
 			punched = punched,
 			ready = ready,
+			locked = dailyLocked(profile.data),
+			saved = ready and grace, -- cobrar hoy gasta el día de gracia y salva la racha
 			wait = (today() + 1) * DAY - now,
 			prizes = prizes,
 		},
@@ -711,13 +730,16 @@ end
 
 local function claimDaily(profile)
 	local q = profile.data.quests
-	local step, _, ready = dailyState(q)
+	local step, _, ready, grace = dailyState(profile)
 	if not ready then
 		return
 	end
 	local prize = DAILY[step]
 	q.daily.day = today()
 	q.daily.streak = step
+	if grace then
+		q.daily.grace = q.daily.day
+	end
 	local result = { daily = step, food = giveFood(profile, prize.minutes * 60) }
 	if prize.buff then
 		giveBuff(profile, prize.buff * 60)
